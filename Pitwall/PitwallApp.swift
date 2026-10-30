@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         path: FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude-monitor/monitor.sock").path)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        umask(0o077)
         let me = NSRunningApplication.current
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil, !Demo.isOn,
            NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")

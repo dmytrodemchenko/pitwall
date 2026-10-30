@@ -78,6 +78,10 @@ struct MenuView: View {
     nonisolated static let space = "menu"
 
     private var live: Bool { openedAt != nil && !reduceMotion }
+    private var today: [UsageEntry] {
+        guard let today = analytics?.today, !today.isEmpty else { return usage.today() }
+        return today
+    }
 
     var body: some View {
         let sessions = store.activeSessions
@@ -87,7 +91,7 @@ struct MenuView: View {
                 TabSwitch(tab: $tab, reduceMotion: reduceMotion) { popover?.tabFrames[$0] = $1 }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
-                Header(store: store, entries: usage.today(), prices: prices)
+                Header(store: store, entries: today, prices: prices)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 14)
                 if let analytics {

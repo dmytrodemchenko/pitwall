@@ -77,6 +77,58 @@ struct GateRunItem: Equatable {
     var duration: TimeInterval { max(0, end.timeIntervalSince(start)) }
 }
 
+extension GateRunItem {
+    private struct Meta: Decodable {
+        let agentType: String?
+        let finished: Bool?
+    }
+
+    private struct Line: Decodable {
+        struct Message: Decodable {
+            struct Block: Decodable {
+                let type: String?
+                let text: String?
+            }
+
+            let blocks: [Block]
+
+            enum CodingKeys: String, CodingKey { case content }
+
+            init(from decoder: Decoder) throws {
+                blocks = (try? decoder.container(keyedBy: CodingKeys.self).decode([Block].self, forKey: .content)) ?? []
+            }
+        }
+
+        let timestamp: String?
+        let cwd: String?
+        let type: String?
+        let message: Message?
+    }
+
+    static func subagent(transcript url: URL) -> GateRunItem? {
+        let meta = url.deletingPathExtension().appendingPathExtension("meta.json")
+        guard let m = try? JSONDecoder().decode(Meta.self, from: Data(contentsOf: meta)),
+              let gate = m.agentType, !gate.isEmpty, m.finished != false,
+              let data = try? Data(contentsOf: url) else { return nil }
+        let iso = ISO8601DateFormatter(), fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var start: Date?, end: Date?, folder: String?, last: String?
+        for line in data.split(separator: UInt8(ascii: "\n")) {
+            guard let l = try? JSONDecoder().decode(Line.self, from: line),
+                  let ts = l.timestamp.flatMap({ fractional.date(from: $0) ?? iso.date(from: $0) }) else { continue }
+            start = start ?? ts
+            end = ts
+            folder = folder ?? l.cwd
+            let text = (l.type == "assistant" ? l.message?.blocks ?? [] : []).compactMap { $0.type == "text" ? $0.text : nil }
+            if !text.isEmpty { last = text.joined(separator: "\n") }
+        }
+        guard let start, let end else { return nil }
+        let session = url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
+        return GateRunItem(session: session, gate: gate, start: start, end: end,
+                           lastMessage: gate == "verifier" ? last.map { String($0.suffix(2000)) } : nil, folder: folder)
+    }
+}
+
 struct GateRunBuilder {
     private var open: [String: GateRun] = [:]
     private var last: [String: String] = [:]
@@ -151,7 +203,7 @@ struct UsageItem {
 }
 
 actor AnalyticsStore {
-    static let importedKey = "analyticsImportedAt", history: TimeInterval = 30 * 86400
+    static let importedKey = "analyticsImportedAt", backfilledKey = "analyticsBackfilledBefore", history: TimeInterval = 30 * 86400
 
     private let container: ModelContainer
     private lazy var context = ModelContext(container)
@@ -176,20 +228,34 @@ actor AnalyticsStore {
         }
         let dir = URL.applicationSupportDirectory.appending(path: "ClaudeMonitor")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        return try ModelContainer(for: UsageRow.self, GateRunRow.self,
-                                  configurations: ModelConfiguration(url: dir.appending(path: "analytics.store")))
+        let container = try ModelContainer(for: UsageRow.self, GateRunRow.self,
+                                           configurations: ModelConfiguration(url: dir.appending(path: "analytics.store")))
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: dir.appending(path: name).path)
+        }
+        return container
     }
 
     func importTranscripts(root: URL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude/projects"),
+                           events: URL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude-monitor/events.jsonl"),
                            defaults: UserDefaults = .standard, now: Date = Date()) {
         let oldest = now.addingTimeInterval(-Self.history)
-        let since = max(defaults.object(forKey: Self.importedKey) as? Date ?? oldest, oldest)
-        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey])?
-            .compactMap { $0 as? URL }
-            .filter { $0.pathExtension == "jsonl"
-                && ((try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) >= since
-            } ?? []
-        ingest(files, oldest: oldest)
+        let empty = ((try? context.fetchCount(FetchDescriptor<UsageRow>())) ?? 0) == 0
+        let since = empty ? oldest : max(defaults.object(forKey: Self.importedKey) as? Date ?? oldest, oldest)
+        let all = (FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey])?
+            .compactMap { $0 as? URL } ?? [])
+            .filter { $0.pathExtension == "jsonl" }
+            .map { ($0, (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) }
+        ingest(all.filter { $0.1 >= since }.map(\.0), oldest: oldest)
+        let logStart = firstEvent(in: events) ?? .distantFuture
+        if empty || defaults.object(forKey: Self.backfilledKey) as? Date != logStart {
+            for (url, modified) in all where modified >= oldest && url.path.contains("/subagents/") {
+                guard let run = GateRunItem.subagent(transcript: url), run.end < logStart, run.end >= oldest else { continue }
+                context.insert(GateRunRow(run))
+            }
+            commit()
+            defaults.set(logStart, forKey: Self.backfilledKey)
+        }
         defaults.set(now, forKey: Self.importedKey)
     }
 
@@ -214,6 +280,13 @@ actor AnalyticsStore {
             }
         }
         commit()
+    }
+
+    private func firstEvent(in url: URL) -> Date? {
+        guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? h.close() }
+        let head = (try? h.read(upToCount: 64 * 1024)) ?? Data()
+        return head.split(separator: UInt8(ascii: "\n")).lazy.compactMap { HookEvent.parse(Data($0)) }.first?.timestamp
     }
 
     func ingestEvents(url: URL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude-monitor/events.jsonl")) {
@@ -382,6 +455,7 @@ final class Analytics {
     var pipeline: PipelineReport?
     var config: [ConfigImpact] = []
     var budget = BudgetStatus()
+    var today: [UsageEntry] = []
     var importing = false
     var saveError: String?
     @ObservationIgnored let store: AnalyticsStore?
@@ -429,6 +503,8 @@ final class Analytics {
         guard let store else { return }
         let status = await store.budget(prices: prices)
         if status != budget { budget = status }
+        let entries = await store.items(since: Calendar.current.startOfDay(for: Date())).map(\.entry).sorted { $0.timestamp < $1.timestamp }
+        if entries != today { today = entries }
         if alert { alerts?.check(status) }
         windowTimer?.invalidate()
         if let at = status.windowFreesAt, at > Date() {

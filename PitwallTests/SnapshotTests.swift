@@ -58,6 +58,12 @@ final class SnapshotTests: XCTestCase {
         for (name, scheme) in [("light", ColorScheme.light), ("dark", .dark)] {
             try render(AnalyticsView(analytics: analytics).frame(width: 360), scheme: scheme, to: "analytics-\(name).png")
         }
+        // No session in the event log yet (right after an install): the header still shows today's transcripts.
+        await analytics.refreshBudget(alert: false)
+        for (name, scheme) in [("light", ColorScheme.light), ("dark", .dark)] {
+            try render(MenuView(store: SessionStore(), usage: UsageStore(), prices: monitor.prices, analytics: analytics),
+                       scheme: scheme, to: "menu-fresh-\(name).png")
+        }
         // The budget row in both modes, with its own defaults (the test host shares the real app's defaults).
         let status = await store.budget(prices: monitor.prices)
         let api = UserDefaults(suiteName: "snapshot-api")!, sub = UserDefaults(suiteName: "snapshot-sub")!
