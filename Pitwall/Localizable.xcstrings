@@ -10,6 +10,9 @@
     "“Open in IDE” runs this in a login shell with the project folder as its argument, e.g. `webstorm`, `code`, `idea`, `cursor`." : {
 
     },
+    "%@" : {
+
+    },
     "%@ · %@" : {
       "localizations" : {
         "en" : {
@@ -20,15 +23,18 @@
         }
       }
     },
-    "%@ · ^[%@ tool call](inflect: true) · %@" : {
+    "%@ · %@ tokens · %@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ · ^[%2$@ tool call](inflect: true) · %3$@"
+            "value" : "%1$@ · %2$@ tokens · %3$@"
           }
         }
       }
+    },
+    "%@ more in the timeline (Errors filter)." : {
+
     },
     "%@ sessions" : {
 
@@ -76,20 +82,13 @@
         }
       }
     },
-    "^[%@ call](inflect: true) · %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "^[%1$@ call](inflect: true) · %2$@"
-          }
-        }
-      }
-    },
     "×%@" : {
 
     },
     "$%@" : {
+
+    },
+    "Agent" : {
 
     },
     "Alerts and Allow/Deny prompts can't be shown; permission requests go to the terminal." : {
@@ -101,10 +100,16 @@
     "API" : {
 
     },
+    "Calls" : {
+
+    },
     "Context" : {
 
     },
     "Context windows per model are in ~/.claude-monitor/context.json (default 200 000 tokens)." : {
+
+    },
+    "Est. cost" : {
 
     },
     "estimate" : {
@@ -168,6 +173,15 @@
 
     },
     "Terminal" : {
+
+    },
+    "Time" : {
+
+    },
+    "Times, tokens, tool calls and files come from the transcript. Cost is an estimate from Pitwall's price table." : {
+
+    },
+    "Tokens" : {
 
     },
     "Total" : {

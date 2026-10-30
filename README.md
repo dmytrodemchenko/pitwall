@@ -228,13 +228,17 @@ opens the same window showing only that session's tasks. A task is one prompt an
 the next one. Tasks come from the transcripts of the last 7 days (the 40 most recently changed sessions) and are
 read again each time the window opens.
 
-- **Overview**: duration, estimated cost (from the same price table as the rest of Pitwall), tokens, tool calls,
-  failed calls and API retries, and the number of files touched.
-- **Files**: every file that was read, created, edited or deleted. Failed edits are left out.
-- **Agents**: the subagents the task ran, with their call count and how long each one worked.
-- **Timeline**: messages, tool calls with their duration and result, subagent activity (labelled with the agent),
-  retries and interruptions, in order. Filter it to tools, files, agents, errors or messages. Click a row for the
-  full command and its output.
+- **Overview**: duration, estimated cost (from the same price table as the rest of Pitwall), input, output and
+  cache tokens, tool calls, failed calls and API retries, files changed, and the subagents' share of the cost.
+  Times, tokens, calls and files come from the transcript; only the cost is an estimate.
+- **Agents**: the main agent and each subagent, with their tool calls, time, tokens and cost.
+- **Files**: every file that was read, created, edited or deleted, the agents that touched it, and when. Failed
+  edits are left out, and a file that was only read doesn't count as changed.
+- **Errors and retries**: failed tool calls with their output, API retries and interruptions.
+- **Timeline**: the prompt, messages, tool calls with their duration and result, subagent activity (labelled with
+  the agent) and each subagent's finish, retries, interruptions and the end of the task, in order. Filter it to
+  tools, files, agents, errors or messages. Long timelines show 200 events at a time. Click a row for the full
+  command and its output.
 
 A task counts as complete when Claude ended its turn. A task that was interrupted, is still running, or whose
 transcript ends early is marked as such.
