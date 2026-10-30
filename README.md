@@ -198,6 +198,13 @@ The failure pattern is a regular expression and can be changed in Settings > Pip
 The **Analytics** tab covers the last 7 days. On first launch Pitwall imports the last 30 days of transcripts in
 the background.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/analytics-dark.png">
+    <img src="docs/images/analytics-light.png" width="360" alt="The Analytics tab with sample data">
+  </picture>
+</p>
+
 - **Cost per day**, split by your top five projects, and a **per-project** total.
 - **Cache hit ratio**: cache reads divided by cache reads, cache writes and input tokens. When an active
   session stays below the threshold for 10 minutes, its card shows a warning.

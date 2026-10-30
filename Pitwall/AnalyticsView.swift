@@ -411,11 +411,9 @@ private struct ModelAdvices: View {
                               systemImage: "arrow.down.right")
                             .foregroundStyle(Color(.running))
                     }
-                    let measured = a.models.filter { $0.verifier.runs > 0 }
-                    if !measured.isEmpty {
-                        Label("Verifier after it: " + measured.map {
-                            "\(ModelAdvice.name($0.model)) passed \($0.verifier.runs - $0.verifier.failures) of \($0.verifier.runs)"
-                        }.joined(separator: " · "), systemImage: "checkmark.seal")
+                    ForEach(a.models.filter { $0.verifier.runs > 0 }, id: \.model) { m in
+                        Label("Verifier after it\(a.models.count > 1 ? " on \(ModelAdvice.name(m.model))" : ""): "
+                              + "passed \(m.verifier.runs - m.verifier.failures) of \(m.verifier.runs)", systemImage: "checkmark.seal")
                             .foregroundStyle(.secondary)
                     }
                 }

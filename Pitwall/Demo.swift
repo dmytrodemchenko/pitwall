@@ -64,6 +64,16 @@ enum Demo {
                      files: [".claude/agents/planner.md"])
     }
 
+    static func load(_ analytics: Analytics, store: AnalyticsStore, root: URL, prices: PriceTable, now: Date) async {
+        guard let events = try? history(in: root, now: now) else { return }
+        let defaults = UserDefaults(suiteName: "pitwall-demo")!
+        defaults.removePersistentDomain(forName: "pitwall-demo")
+        await store.importTranscripts(root: root.appending(path: "projects"), events: events, defaults: defaults, now: now)
+        await store.ingestEvents(url: events)
+        await analytics.reload()
+        analytics.budget = await store.budget(prices: prices)
+    }
+
     static func history(in root: URL, now: Date) throws -> URL {
         var seed: UInt64 = 42
         func r() -> Double {
@@ -75,9 +85,9 @@ enum Demo {
         let projects = [("storefront", 1.0), ("payments-api", 0.75), ("mobile-app", 0.5), ("design-system", 0.3), ("infra", 0.18)]
         for (project, weight) in projects {
             var lines = ""
-            for day in 0..<7 {
+            for day in 0..<14 {
                 let start = Calendar.current.date(byAdding: .day, value: -day, to: today)!
-                let count = Int((60 + r() * 110) * weight)
+                let count = Int((60 + r() * 110) * weight * (day < 7 ? 1 : 0.85))
                 for m in 0..<count {
                     var ts = start + 9 * 3600 + r() * 9 * 3600
                     if ts > now { ts = now - r() * 3 * 3600 }
@@ -100,7 +110,7 @@ enum Demo {
             o["verdict"] = verdict
             log += String(decoding: try! JSONSerialization.data(withJSONObject: o), as: UTF8.self) + "\n"
         }
-        for day in 0..<7 {
+        for day in (0..<7).reversed() {
             for k in 0..<3 {
                 let session = "run-\(day)-\(k)"
                 var at = Calendar.current.date(byAdding: .day, value: -day, to: today)! + 10 * 3600 + Double(k) * 7200
@@ -109,6 +119,8 @@ enum Demo {
                     guard end < now else { break }
                     ev("PreToolUse", session, at, tool: "Agent", agent: gate)
                     ev("SubagentStop", session, end, agent: gate, verdict: gate == "verifier" ? (r() < (end < configChange(now: now).at ? 0.4 : 0.15) ? "fail" : "pass") : nil)
+                    let model = gate == "verifier" || (gate == "developer" && day < 4) ? "claude-sonnet-5-5" : "claude-opus-5-5"
+                    try subagent(session: session, gate: gate, model: model, from: at, to: end, in: root, r: r)
                     at = end + 20
                 }
             }
@@ -116,5 +128,25 @@ enum Demo {
         let url = root.appending(path: "events.jsonl")
         try log.write(to: url, atomically: true, encoding: .utf8)
         return url
+    }
+
+    private static func subagent(session: String, gate: String, model: String, from: Date, to: Date, in root: URL,
+                                 r: () -> Double) throws {
+        let dir = root.appending(path: "projects/-Users-demo-storefront/\(session)/subagents")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let iso = ISO8601DateFormatter()
+        let scale: Double = ["architect": 0.5, "planner": 0.6, "developer": 1.6, "verifier": 0.7][gate] ?? 1
+        var lines = ""
+        for m in 0..<8 {
+            let ts = iso.string(from: from + to.timeIntervalSince(from) * Double(m + 1) / 9)
+            let input = Int(200 + r() * 800), output = Int((600 + r() * 1800) * scale)
+            let read = Int((30_000 + r() * 60_000) * scale), write = Int((1_500 + r() * 4_000) * scale)
+            let usage = #""usage":{"input_tokens":\#(input),"output_tokens":\#(output),"cache_read_input_tokens":\#(read),"#
+                + #""cache_creation_input_tokens":\#(write),"cache_creation":{"ephemeral_5m_input_tokens":\#(write),"ephemeral_1h_input_tokens":0}}"#
+            lines += #"{"type":"assistant","sessionId":"\#(session)","cwd":"/Users/demo/storefront","timestamp":"\#(ts)","#
+                + #""message":{"id":"\#(session)-\#(gate)-\#(m)","model":"\#(model)","role":"assistant",\#(usage)}}"# + "\n"
+        }
+        try lines.write(to: dir.appending(path: "agent-\(gate).jsonl"), atomically: true, encoding: .utf8)
+        try #"{"agentType":"\#(gate)","finished":true}"#.write(to: dir.appending(path: "agent-\(gate).meta.json"), atomically: true, encoding: .utf8)
     }
 }

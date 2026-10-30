@@ -80,6 +80,21 @@ final class SnapshotTests: XCTestCase {
     }
 
     /// One row per state, frames left to right; plus an animated GIF of each state at menu bar size.
+    /// The Analytics tab on demo data, for the README: docs/images/analytics-{light,dark}.png.
+    @MainActor
+    func testRenderAnalyticsDemo() async throws {
+        let root = tempDir(), now = Date(), change = Demo.configChange(now: now)
+        let store = AnalyticsStore(container: try AnalyticsStore.container(inMemory: true),
+                                   configChanges: { folder, _ in folder.hasSuffix("/storefront") ? [change] : [] })
+        let prices = Monitor { _ in }.prices
+        let analytics = Analytics(store: store, prices: prices)
+        await Demo.load(analytics, store: store, root: root, prices: prices, now: now)
+        for (name, scheme) in [("light", ColorScheme.light), ("dark", .dark)] {
+            try render(AnalyticsView(analytics: analytics, active: false).frame(width: 360), scheme: scheme,
+                       to: "analytics-demo-\(name).png")
+        }
+    }
+
     @MainActor
     func testRenderMarkFrames() throws {
         let states = [MarkState(mode: .idle), MarkState(mode: .running), MarkState(mode: .running, gate: "developer"),

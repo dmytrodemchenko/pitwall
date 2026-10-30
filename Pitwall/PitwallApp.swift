@@ -113,13 +113,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         self.analytics = analytics
         let prices = monitor.prices
         Task {
-            guard let store, let events = try? Demo.history(in: root, now: now) else { return }
-            let defaults = UserDefaults(suiteName: "pitwall-demo")!
-            defaults.removePersistentDomain(forName: "pitwall-demo")
-            await store.importTranscripts(root: root.appending(path: "projects"), defaults: defaults, now: now)
-            await store.ingestEvents(url: events)
-            await analytics.reload()
-            analytics.budget = await store.budget(prices: prices)
+            guard let store else { return }
+            await Demo.load(analytics, store: store, root: root, prices: prices, now: now)
         }
     }
 
