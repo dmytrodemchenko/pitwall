@@ -2,6 +2,10 @@
 
 Versions come from git tags (`v1.2` → 1.2); the build number is the commit count (`scripts/release.sh`).
 
+## Unreleased
+
+- Task Replay: a window with every prompt from the last 7 days, rebuilt from the transcripts. Each task shows the prompt and final response, duration, tokens, estimated cost, tool calls, errors and API retries, the files it read, created, edited or deleted, and the subagents it ran, followed by a timeline that can be filtered to tools, files, agents, errors or messages. Open it from the clock button in the popover footer, or from a session card's menu (Replay Tasks).
+
 ## 1.4
 
 - Analytics redesign: four summary tiles (7-day cost with the change against the week before, cache hit ratio with a 7-day sparkline, verifier pass rate, savings on cheaper models), each section on its own card, a cleaner cost chart that labels the peak day, and project rows with share bars that double as the chart's legend.
