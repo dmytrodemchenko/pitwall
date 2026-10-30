@@ -27,6 +27,7 @@ struct UsageRecord {
     let entry: UsageEntry
     var cwd: String?
     var session: String?
+    var agent: String?
 
     private struct Line: Decodable {
         let timestamp: Date

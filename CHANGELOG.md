@@ -4,6 +4,12 @@ Versions come from git tags (`v1.2` → 1.2); the build number is the commit cou
 
 ## Unreleased
 
+- Analytics › Models: per pipeline agent, the model it runs on, its 7-day cost, what the same tokens cost one tier down ("On Sonnet 5.5: $7.47 less (−50%)"), and the verifier result after its runs, per model. Subagent usage is now tagged with its agent type (from `.meta.json`); older rows are tagged once on the next launch.
+- Cache expiry warning: 2 min before the prompt cache of a waiting session expires, "storefront: prompt cache expires in 2 min. A message after that costs $0.96 more" (5 min or 1 h TTL, from the session's cache writes). Only from $0.50 extra; Settings > Cache.
+- Collision alert: "storefront and api are both editing cart.ts" when two sessions edit the same file within 30 min (once per pair and file).
+
+## 1.2.2
+
 - The header's "today" comes from the transcripts, like the Analytics chart, so the two always agree; it no longer shows $0.00 when no session has sent an event yet.
 - After `uninstall.sh --purge` and a new install, Analytics imports the full 30 days again (it imported only today).
 - Pipeline: subagent runs from before the event log started (a first install, or after `--purge`) are read from the subagent transcripts (`subagents/agent-*.jsonl` + `.meta.json`), so the 7 days are complete.

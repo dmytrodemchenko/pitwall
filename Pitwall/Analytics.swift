@@ -15,6 +15,7 @@ final class UsageRow {
     var cacheRead: Int
     var cacheWrite5m: Int
     var cacheWrite1h: Int
+    var agent: String?
 
     init(_ r: UsageRecord, project: String) {
         messageID = r.messageID
@@ -28,13 +29,14 @@ final class UsageRow {
         cacheRead = t.cacheRead
         cacheWrite5m = t.cacheWrite5m
         cacheWrite1h = t.cacheWrite1h
+        agent = r.agent
     }
 
     var item: UsageItem {
         UsageItem(project: project, session: session, entry: UsageEntry(
             model: model, timestamp: timestamp,
             tokens: TokenUsage(input: input, output: output, cacheRead: cacheRead,
-                               cacheWrite5m: cacheWrite5m, cacheWrite1h: cacheWrite1h)))
+                               cacheWrite5m: cacheWrite5m, cacheWrite1h: cacheWrite1h)), agent: agent)
     }
 }
 
@@ -81,6 +83,11 @@ extension GateRunItem {
     private struct Meta: Decodable {
         let agentType: String?
         let finished: Bool?
+    }
+
+    static func agentType(transcript url: URL) -> String? {
+        let meta = url.deletingPathExtension().appendingPathExtension("meta.json")
+        return (try? JSONDecoder().decode(Meta.self, from: Data(contentsOf: meta)))?.agentType.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     private struct Line: Decodable {
@@ -200,10 +207,12 @@ struct UsageItem {
     let project: String
     let session: String
     let entry: UsageEntry
+    var agent: String? = nil
 }
 
 actor AnalyticsStore {
-    static let importedKey = "analyticsImportedAt", backfilledKey = "analyticsBackfilledBefore", history: TimeInterval = 30 * 86400
+    static let importedKey = "analyticsImportedAt", backfilledKey = "analyticsBackfilledBefore", agentsKey = "analyticsAgentsTagged"
+    static let history: TimeInterval = 30 * 86400
 
     private let container: ModelContainer
     private lazy var context = ModelContext(container)
@@ -211,6 +220,7 @@ actor AnalyticsStore {
     private var events: JSONLReader<HookEvent>?
     private var gateRuns = GateRunBuilder()
     private var projects: [String: String] = [:]
+    private var agents: [String: String] = [:]
     private(set) var saveError: String?
     private let save: @Sendable (ModelContext) throws -> Void
     private let configChanges: @Sendable (String, Date) -> [ConfigChange]
@@ -246,7 +256,9 @@ actor AnalyticsStore {
             .compactMap { $0 as? URL } ?? [])
             .filter { $0.pathExtension == "jsonl" }
             .map { ($0, (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) }
-        ingest(all.filter { $0.1 >= since }.map(\.0), oldest: oldest)
+        let untagged = defaults.bool(forKey: Self.agentsKey) ? [] : all.filter { $0.1 >= oldest && $0.0.path.contains("/subagents/") }
+        ingest((all.filter { $0.1 >= since } + untagged).map(\.0), oldest: oldest)
+        defaults.set(true, forKey: Self.agentsKey)
         let logStart = firstEvent(in: events) ?? .distantFuture
         if empty || defaults.object(forKey: Self.backfilledKey) as? Date != logStart {
             for (url, modified) in all where modified >= oldest && url.path.contains("/subagents/") {
@@ -272,7 +284,9 @@ actor AnalyticsStore {
             let key = url.resolvingSymlinksInPath().path
             let reader = readers[key] ?? JSONLReader(url: url, parse: UsageRecord.parse)
             readers[key] = reader
-            for record in reader.readNew() {
+            agents[key] = url.path.contains("/subagents/") ? agents[key] ?? GateRunItem.agentType(transcript: url) : nil
+            for var record in reader.readNew() {
+                record.agent = agents[key]
                 let session = record.session ?? url.path
                 let project = projects[session] ?? SessionStore.projectName(record.cwd)
                 projects[session] = project
@@ -337,6 +351,11 @@ actor AnalyticsStore {
         return Dictionary(grouping: runs) { $0.folder! }.flatMap { folder, runs in
             ConfigImpact.compare(changes: configChanges(folder, since), runs: runs, project: SessionStore.projectName(folder), pattern: pattern)
         }.sorted { $0.change.at > $1.change.at }
+    }
+
+    func modelAdvice(prices: PriceTable, pattern: String, now: Date = Date()) -> [ModelAdvice] {
+        let from = CostReport.days(ending: now).first!
+        return ModelAdvice.advise(items: items(since: from), runs: gateRuns(since: from), prices: prices, pattern: pattern)
     }
 
     func reports(prices: PriceTable, pattern: String, now: Date = Date()) -> (CostReport, CacheReport, PipelineReport) {
@@ -454,6 +473,7 @@ final class Analytics {
     var cache: CacheReport?
     var pipeline: PipelineReport?
     var config: [ConfigImpact] = []
+    var models: [ModelAdvice] = []
     var budget = BudgetStatus()
     var today: [UsageEntry] = []
     var importing = false
@@ -518,5 +538,6 @@ final class Analytics {
         guard let store else { return }
         (cost, cache, pipeline) = await store.reports(prices: prices, pattern: Verifier.pattern())
         config = await store.configImpacts(pattern: Verifier.pattern())
+        models = await store.modelAdvice(prices: prices, pattern: Verifier.pattern())
     }
 }

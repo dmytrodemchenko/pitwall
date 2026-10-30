@@ -64,7 +64,12 @@ For details, other install methods and uninstall, refer to [Installation](#insta
 - **Allow or deny from a notification.** When Claude Code asks for a permission, you can answer from the
   notification.
 - **Loop detection.** Pitwall tells you when an agent repeats the same action and spends money without progress.
+- **Cache expiry warning.** Pitwall tells you before the prompt cache of a waiting session expires, and what your
+  next message will cost more after that.
+- **Collision alert.** Pitwall tells you when two sessions edit the same file.
 - **Analytics.** Cost per day, cache hit ratio, gate times and the verifier failure rate for the last 7 days.
+- **Models.** For each pipeline agent: the model it runs on, its cost for 7 days, how much less the same tokens cost
+  one tier down (Opus → Sonnet → Haiku), and how often the verifier passed after it, per model.
 - **Config impact.** Pitwall compares the verifier failure rate before and after each change to an agent prompt
   or to `CLAUDE.md`.
 - **Budget.** A daily budget in USD, or a token limit for a 5-hour window on a subscription.
@@ -194,6 +199,8 @@ Pitwall sends a notification when:
 - The verifier fails.
 - The context of a session is more than 85% full.
 - An agent is in a loop.
+- The prompt cache of a waiting session expires in 2 minutes (see below).
+- Two sessions edit the same file, for example "storefront and api are both editing cart.ts".
 - You reach 80% or 100% of your budget.
 
 ### Allow or deny a permission request
@@ -222,6 +229,16 @@ conditions occurs:
 - The verifier fails 3 times in sequence.
 
 The alert has a **Stop…** button. It asks for confirmation before it stops the session.
+
+### Cache expiry warning
+
+Claude Code caches the conversation for 5 minutes (or 1 hour) after each reply. If you answer later, the whole
+context is written to the cache again, at the cache-write price instead of the cache-read price. For a session that
+waits for you, Pitwall sends a warning 2 minutes before the cache expires, for example
+"storefront: prompt cache expires in 2 min. A message after that costs $0.96 more".
+
+Pitwall sends the warning only when the extra cost is at least $0.50. To change the amount, or to turn the warning
+off (0), use **Settings > Cache > Expiry warning from**.
 
 ### Verifier result
 

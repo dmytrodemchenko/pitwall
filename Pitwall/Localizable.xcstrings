@@ -23,6 +23,9 @@
     "%@ · 7 days" : {
 
     },
+    "%@ less one tier down" : {
+
+    },
     "%@ sessions" : {
 
     },
@@ -105,6 +108,9 @@
     "iTerm2" : {
 
     },
+    "Models · 7 days" : {
+
+    },
     "No active sessions" : {
 
     },
@@ -121,6 +127,9 @@
 
     },
     "Notifications are off" : {
+
+    },
+    "off" : {
 
     },
     "Oldest usage leaves the window in %@" : {

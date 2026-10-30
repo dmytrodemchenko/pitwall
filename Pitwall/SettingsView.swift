@@ -8,6 +8,7 @@ struct SettingsView: View {
     @AppStorage(ContextLevel.warnKey) private var contextWarn = ContextLevel.defaultWarn
     @AppStorage(ContextLevel.alertKey) private var contextAlert = ContextLevel.defaultAlert
     @AppStorage(CacheRatio.warnKey) private var cacheWarn = CacheRatio.defaultWarn
+    @AppStorage(CacheExpiry.minCostKey) private var cacheMinCost = CacheExpiry.defaultMinCost
     @AppStorage(BudgetSettings.modeKey) private var billing = BillingMode.api
     @AppStorage(BudgetSettings.dailyBudgetKey) private var dailyBudget = 0.0
     @AppStorage(BudgetSettings.windowLimitKey) private var windowLimit = 0
@@ -65,6 +66,12 @@ struct SettingsView: View {
             Section("Cache") {
                 Stepper("Warn when the cache hit ratio stays below \(Int(cacheWarn))% for 10 min", value: $cacheWarn,
                         in: 5...95, step: 5)
+                TextField("Expiry warning from (USD)", value: $cacheMinCost,
+                          format: .number.precision(.fractionLength(0...2)), prompt: Text("off"))
+                Text("When a session waits for you, its prompt cache expires after 5 min (or 1 h). Notifies 2 min before, "
+                     + "if your next message would then cost at least this much more. 0 turns it off.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Section("Pipeline") {
                 Stepper("Gate time turns yellow after \(Int(gateLimit)) min", value: $gateLimit, in: 1...120)
