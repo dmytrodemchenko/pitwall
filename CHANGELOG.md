@@ -2,6 +2,12 @@
 
 Versions come from git tags (`v1.2` → 1.2); the build number is the commit count (`scripts/release.sh`).
 
+## Unreleased
+
+- Models: an agent that ran on two models shows the verifier result for each on its own line (it was cut off).
+- Demo mode: two weeks of usage and subagent transcripts, so the summary tiles and Models have data. The demo event log is written oldest first, so its subagent runs are no longer counted twice.
+- README: screenshots of the Analytics tab (demo data).
+
 ## 1.4
 
 - Analytics redesign: four summary tiles (7-day cost with the change against the week before, cache hit ratio with a 7-day sparkline, verifier pass rate, savings on cheaper models), each section on its own card, a cleaner cost chart that labels the peak day, and project rows with share bars that double as the chart's legend.
