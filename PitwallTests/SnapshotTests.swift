@@ -47,6 +47,7 @@ final class SnapshotTests: XCTestCase {
         let analytics = Analytics(store: store, prices: monitor.prices)
         await store.ingestEvents()
         (analytics.cost, analytics.cache, analytics.pipeline) = await store.reports(prices: monitor.prices, pattern: Verifier.defaultPattern)
+        analytics.models = await store.modelAdvice(prices: monitor.prices, pattern: Verifier.defaultPattern)
         // Config changes: made-up runs around a planner change (10 → 40% before, 15% after) and one too recent to tell.
         let runs = (0..<20).map { (i: Int) -> GateRunItem in
             let failed = i < 10 ? i % 5 < 2 : i % 7 == 0
@@ -167,6 +168,20 @@ final class SnapshotTests: XCTestCase {
                 }
             }
             try render(stills, scheme: scheme, to: "stage-\(name).png")
+        }
+    }
+
+    /// The Settings window: a Form scrolls, so it is drawn from a hosting view, not ImageRenderer.
+    @MainActor
+    func testRenderSettings() throws {
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            let view = NSHostingView(rootView: SettingsView(hotKey: HotKey()).frame(width: 480, height: 1100))
+            view.appearance = NSAppearance(named: appearance)
+            view.frame = CGRect(x: 0, y: 0, width: 480, height: 1100)
+            view.layoutSubtreeIfNeeded()
+            let rep = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: rep)
+            try XCTUnwrap(rep.representation(using: .png, properties: [:])).write(to: dir.appending(path: "settings-\(name).png"))
         }
     }
 

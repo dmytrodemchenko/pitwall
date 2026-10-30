@@ -24,6 +24,10 @@ struct AnalyticsView: View {
                     Divider().opacity(0.5)
                     PipelineStats(report: pipeline)
                 }
+                if !analytics.models.isEmpty {
+                    Divider().opacity(0.5)
+                    ModelAdvices(advices: analytics.models)
+                }
                 if !analytics.config.isEmpty {
                     Divider().opacity(0.5)
                     ConfigImpacts(impacts: analytics.config)
@@ -313,6 +317,53 @@ private struct ConfigImpacts: View {
         return Label("Verifier fails \(percent(before)) → \(percent(after)) (\(i.before.runs) → \(i.after.runs) runs)",
                      systemImage: abs(delta) < 0.05 ? "equal" : delta < 0 ? "arrow.down.right" : "arrow.up.right")
             .foregroundStyle(abs(delta) < 0.05 ? Color.secondary : delta < 0 ? Color(.running) : Color(.failure))
+    }
+}
+
+private struct ModelAdvices: View {
+    let advices: [ModelAdvice]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Models · 7 days").font(.subheadline.weight(.semibold))
+                Spacer()
+                let savings = advices.compactMap(\.savings).filter { $0 >= 0.01 }.reduce(0, +)
+                if savings > 0 {
+                    Text("\(UsageText.cost(savings)) less one tier down").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            ForEach(advices) { a in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(a.gate).lineLimit(1).truncationMode(.tail).help(a.gate)
+                        Spacer(minLength: 8)
+                        Text(a.models.map { ModelAdvice.name($0.model) }.joined(separator: ", "))
+                            .foregroundStyle(.secondary).lineLimit(1)
+                        Text(UsageText.cost(a.cost)).monospacedDigit().frame(minWidth: 56, alignment: .trailing)
+                    }
+                    if let cheaper = a.cheaper, let savings = a.savings, savings >= 0.01 {
+                        Label("On \(ModelAdvice.name(cheaper)): \(UsageText.cost(savings)) less (−\(Int((savings / a.cost * 100).rounded()))%)",
+                              systemImage: "arrow.down.right")
+                            .foregroundStyle(Color(.running))
+                    }
+                    let measured = a.models.filter { $0.verifier.runs > 0 }
+                    if !measured.isEmpty {
+                        Label("Verifier after it: " + measured.map {
+                            "\(ModelAdvice.name($0.model)) passed \($0.verifier.runs - $0.verifier.failures) of \($0.verifier.runs)"
+                        }.joined(separator: " · "), systemImage: "checkmark.seal")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .font(.caption)
+                .accessibilityElement(children: .combine)
+            }
+            Text("The same tokens at the cheaper model's prices. It may need more turns or fail more: to try it, set the "
+                 + "model in the agent's file in .claude/agents, and the verifier result per model shows here.")
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

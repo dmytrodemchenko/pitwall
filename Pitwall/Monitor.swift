@@ -17,6 +17,10 @@ final class Monitor {
     var onEvents: () -> Void = {}
     var onLoop: (Loop, String) -> Void = { _, _ in }
     private var loops = LoopDetector()
+    private var collisions = CollisionDetector()
+    private var cacheWarned: [String: Date] = [:]
+    var cacheMinCost: () -> Double = { CacheExpiry.minCost() }
+    var isEstimate: () -> Bool = { BudgetSettings.mode() == .subscription }
     private var watcher: EventLogWatcher?
     private var expiryTimer: Timer?
 
@@ -53,6 +57,10 @@ final class Monitor {
                 let cost = prices.cost(of: usage.entries(for: e.sessionId).filter { $0.timestamp >= loop.since })
                 onLoop(loop, loop.message(project: store.sessions[e.sessionId]?.project ?? "Claude", cost: cost, now: e.timestamp))
             }
+            if let c = collisions.observe(e), live {
+                let project = { (id: String) in self.store.sessions[id]?.project ?? "Claude" }
+                notify(CollisionDetector.message(file: c.file, projects: (project(e.sessionId), project(c.other))))
+            }
             if live, e.hookEventName == "PostToolUse", Self.fileChangingTools.contains(e.toolName ?? ""),
                let folder = store.sessions[e.sessionId]?.folder {
                 git.refresh(folder)
@@ -80,6 +88,23 @@ final class Monitor {
             usage.forget(id)
             contextAlerted.remove(id)
             loops.forget(id)
+            collisions.forget(id)
+            cacheWarned[id] = nil
+        }
+        checkCaches(now: Date())
+    }
+
+    func checkCaches(now: Date) {
+        let min = cacheMinCost()
+        guard min > 0 else { return }
+        for s in store.activeSessions where s.activity != .running {
+            guard let context = usage.contexts[s.id], cacheWarned[s.id] != context.at else { continue }
+            let ttl = CacheExpiry.ttl(usage.entries(for: s.id))
+            let left = context.at.addingTimeInterval(ttl).timeIntervalSince(now)
+            guard left > 0, left <= CacheExpiry.lead,
+                  let extra = CacheExpiry.extraCost(context, ttl: ttl, prices: prices), extra >= min else { continue }
+            cacheWarned[s.id] = context.at
+            notify(CacheExpiry.message(project: s.project, left: left, extra: extra, estimate: isEstimate()))
         }
     }
 
