@@ -27,6 +27,16 @@
   </picture>
 </p>
 
+## Install
+
+```sh
+curl -fsSL https://github.com/dmytrodemchenko/pitwall/releases/latest/download/install.sh | sh
+```
+
+You need macOS 14 or later, Claude Code and `jq` (macOS 15 and later include it). The command installs
+`Pitwall.app` in `~/Applications`, registers the Claude Code hooks and starts the app. To update, run it again.
+For details, other install methods and uninstall, refer to [Installation](#installation).
+
 ## Contents
 
 - [Features](#features)
