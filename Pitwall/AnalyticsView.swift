@@ -43,7 +43,7 @@ struct AnalyticsView: View {
     }
 }
 
-private struct Card<Content: View>: View {
+struct Card<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -54,7 +54,7 @@ private struct Card<Content: View>: View {
     }
 }
 
-private struct Header: View {
+struct CardHeader: View {
     let title: String
     var detail: String?
 
@@ -67,7 +67,7 @@ private struct Header: View {
     }
 }
 
-private struct Tile<Accessory: View>: View {
+struct Tile<Accessory: View>: View {
     let title: String
     let value: String
     let detail: String
@@ -189,7 +189,7 @@ private struct CostChart: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Header(title: "Cost per day", detail: mode == .subscription ? "API-equivalent" : nil)
+            CardHeader(title: "Cost per day", detail: mode == .subscription ? "API-equivalent" : nil)
             Chart {
                 ForEach(report.bars) { bar in
                     BarMark(x: .value("Day", bar.day, unit: .day), y: .value("Cost", bar.cost), width: .ratio(0.6))
@@ -252,7 +252,7 @@ private struct PipelineStats: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Header(title: "Pipeline", detail: report.gates.isEmpty ? nil : "avg · median")
+            CardHeader(title: "Pipeline", detail: report.gates.isEmpty ? nil : "avg · median")
             if report.gates.isEmpty {
                 Text("No finished subagent runs in the last 7 days.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -360,7 +360,7 @@ private struct ConfigImpacts: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Header(title: "Config changes", detail: "30 days")
+            CardHeader(title: "Config changes", detail: "30 days")
             ForEach(impacts) { i in
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
@@ -396,7 +396,7 @@ private struct ModelAdvices: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Header(title: "Models", detail: "one tier down")
+            CardHeader(title: "Models", detail: "one tier down")
             ForEach(advices) { a in
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {

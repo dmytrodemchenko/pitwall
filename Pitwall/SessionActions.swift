@@ -13,6 +13,7 @@ final class SessionActions {
 
     var errors: [String: String] = [:]
     @ObservationIgnored var showSettings: () -> Void = {}
+    @ObservationIgnored var showReplay: (String?) -> Void = { _ in }
     @ObservationIgnored var defaults = UserDefaults.standard
 
     var ideCommand: String {

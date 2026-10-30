@@ -25,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let hotKey = HotKey()
     private var analytics: Analytics!
     private var settingsWindow: NSWindow?
+    private var replayWindow: NSWindow?
+    private var history = TaskHistory()
     private let permissions = PermissionServer(
         path: FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude-monitor/monitor.sock").path)
 
@@ -67,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
         actions.showSettings = { [weak self] in self?.showSettings() }
+        actions.showReplay = { [weak self] in self?.showReplay(session: $0) }
         if !Demo.isOn {
             startPermissionServer()
             startHotKey()
@@ -97,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func startDemo() {
         let root = FileManager.default.temporaryDirectory.appending(path: "pitwall-demo")
+        history = TaskHistory(root: root.appending(path: "projects"))
         try? FileManager.default.removeItem(at: root)
         try? FileManager.default.createDirectory(at: root.appending(path: "monitor"), withIntermediateDirectories: true)
         monitor = Monitor(dir: root.appending(path: "monitor"), notify: { _ in })
@@ -162,6 +166,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
         NSApp.activate()
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    private func showReplay(session: String?) {
+        popover.performClose(nil)
+        history.session = session
+        if replayWindow == nil {
+            let window = NSWindow(contentViewController: NSHostingController(rootView: TaskReplayView(history: history, prices: monitor.prices)))
+            window.title = "Task Replay"
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.isReleasedWhenClosed = false
+            window.setContentSize(CGSize(width: 980, height: 680))
+            window.center()
+            window.setFrameAutosaveName("TaskReplay")
+            replayWindow = window
+        }
+        NSApp.activate()
+        replayWindow?.makeKeyAndOrderFront(nil)
+        Task { await history.reload() }
     }
 
     func popoverWillShow(_ notification: Notification) { popoverState.openedAt = Date() }

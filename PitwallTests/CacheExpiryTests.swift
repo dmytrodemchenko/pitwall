@@ -36,6 +36,8 @@ final class CacheExpiryTests: XCTestCase {
     func testMonitorWarnsOnceForAWaitingSession() throws {
         let dir = tempDir(), transcript = dir.appending(path: "s1.jsonl"), log = dir.appending(path: "events.jsonl")
         let iso = ISO8601DateFormatter(), last = Date() - 4 * 60
+        // Monitor reads transcripts only for sessions with events today.
+        try XCTSkipUnless(Calendar.current.isDate(last, inSameDayAs: Date() + 10), "the session would start before midnight")
         try (#"{"type":"assistant","timestamp":"\#(iso.string(from: last))","message":{"id":"m1","model":"claude-opus-5-5","usage":{"input_tokens":1,"cache_read_input_tokens":199999,"cache_creation_input_tokens":0,"output_tokens":500}}}"# + "\n")
             .write(to: transcript, atomically: true, encoding: .utf8)
         func hook(_ name: String, _ session: String = "s1") -> String {

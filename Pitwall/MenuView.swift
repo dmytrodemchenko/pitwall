@@ -382,6 +382,20 @@ struct SessionCard: View {
     @AppStorage(CacheRatio.warnKey) private var cacheWarn = CacheRatio.defaultWarn
     @AppStorage(BudgetSettings.modeKey) private var mode = BillingMode.api
 
+    @ViewBuilder private var menu: some View {
+        Button("Open in Terminal", systemImage: "terminal") { actions?.openTerminal(session) }
+        Button("Open in IDE", systemImage: "chevron.left.forwardslash.chevron.right") { actions?.openIDE(session) }
+        Divider()
+        if let folder = session.folder {
+            Button("New Session Here", systemImage: "plus") { actions?.newSession(in: folder, errorKey: session.id) }
+        }
+        Button("Resume in New Tab", systemImage: "arrow.uturn.backward") { actions?.resume(session) }
+        Button("Replay Tasks", systemImage: "clock.arrow.circlepath") { actions?.showReplay(session.id) }
+        Divider()
+        Button("Stop…", systemImage: "stop.fill") { actions?.stop(session) }
+            .disabled(session.pid == nil)
+    }
+
     var body: some View {
         let tint = Color(nsColor: session.status.color)
         let active = session.status == .running || session.status == .waiting
@@ -446,18 +460,7 @@ struct SessionCard: View {
         .onTapGesture { actions?.openTerminal(session) }
         .help((CacheRatio.of(entries).map { "Cache hit ratio: \(Int(($0 * 100).rounded()))%\n" } ?? "")
               + "Click to bring this session's terminal to the front")
-        .contextMenu {
-            Button("Open in Terminal", systemImage: "terminal") { actions?.openTerminal(session) }
-            Button("Open in IDE", systemImage: "chevron.left.forwardslash.chevron.right") { actions?.openIDE(session) }
-            Divider()
-            if let folder = session.folder {
-                Button("New Session Here", systemImage: "plus") { actions?.newSession(in: folder, errorKey: session.id) }
-            }
-            Button("Resume in New Tab", systemImage: "arrow.uturn.backward") { actions?.resume(session) }
-            Divider()
-            Button("Stop…", systemImage: "stop.fill") { actions?.stop(session) }
-                .disabled(session.pid == nil)
-        }
+        .contextMenu { menu }
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "Open in Terminal") { actions?.openTerminal(session) }
         .accessibilityAction(named: "Open in IDE") { actions?.openIDE(session) }
@@ -842,6 +845,7 @@ private struct Footer: View {
             IconButton(icon: "folder", help: "Open transcript folder (~/.claude/projects)") {
                 NSWorkspace.shared.open(home.appending(path: ".claude/projects"))
             }
+            IconButton(icon: "clock.arrow.circlepath", help: "Task Replay") { actions?.showReplay(nil) }
             IconButton(icon: "gearshape", help: "Settings") { actions?.showSettings() }
             IconButton(icon: "power", help: "Quit Pitwall") { NSApplication.shared.terminate(nil) }
                 .keyboardShortcut("q")

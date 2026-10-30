@@ -20,6 +20,16 @@
         }
       }
     },
+    "%@ · ^[%@ tool call](inflect: true) · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · ^[%2$@ tool call](inflect: true) · %3$@"
+          }
+        }
+      }
+    },
     "%@ sessions" : {
 
     },
@@ -66,6 +76,16 @@
         }
       }
     },
+    "^[%@ call](inflect: true) · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "^[%1$@ call](inflect: true) · %2$@"
+          }
+        }
+      }
+    },
     "×%@" : {
 
     },
@@ -93,10 +113,16 @@
     "iTerm2" : {
 
     },
+    "Last %@ days" : {
+
+    },
     "No active sessions" : {
 
     },
     "No finished subagent runs in the last 7 days." : {
+
+    },
+    "no result" : {
 
     },
     "No usage" : {
@@ -108,6 +134,9 @@
     "not set" : {
 
     },
+    "Nothing to show for this filter." : {
+
+    },
     "Notifications are off" : {
 
     },
@@ -117,7 +146,13 @@
     "Oldest usage leaves the window in %@" : {
 
     },
+    "One session" : {
+
+    },
     "Pitwall" : {
+
+    },
+    "Prompts from the last %@ days show up here." : {
 
     },
     "Sessions" : {

@@ -63,6 +63,10 @@ See [Installation](#installation) for building from source and uninstalling.
 - Per agent: what it would cost on the next cheaper model, and how often the verifier passed after it on each model.
 - For each edit to an agent prompt or `CLAUDE.md`: the verifier failure rate before and after.
 
+**Task Replay (last 7 days)**
+- Every prompt as a task: the final response, duration, tokens, cost, tool calls, errors, files touched, subagents.
+- A timeline of what happened, filtered to tools, files, agents, errors or messages.
+
 **Privacy**
 - No network access, no telemetry, no account. No third-party dependencies.
 
@@ -216,6 +220,24 @@ the background.
 Pitwall detects config changes by hashing agent prompts and `CLAUDE.md` in the project and in `~/.claude`, so it
 also works for files that are not in git. For the period before the first hash, it reads the project's git
 history.
+
+## Task Replay
+
+The clock button in the popover footer opens **Task Replay**. A session card's menu has **Replay Tasks**, which
+opens the same window showing only that session's tasks. A task is one prompt and everything Claude Code did until
+the next one. Tasks come from the transcripts of the last 7 days (the 40 most recently changed sessions) and are
+read again each time the window opens.
+
+- **Overview**: duration, estimated cost (from the same price table as the rest of Pitwall), tokens, tool calls,
+  failed calls and API retries, and the number of files touched.
+- **Files**: every file that was read, created, edited or deleted. Failed edits are left out.
+- **Agents**: the subagents the task ran, with their call count and how long each one worked.
+- **Timeline**: messages, tool calls with their duration and result, subagent activity (labelled with the agent),
+  retries and interruptions, in order. Filter it to tools, files, agents, errors or messages. Click a row for the
+  full command and its output.
+
+A task counts as complete when Claude ended its turn. A task that was interrupted, is still running, or whose
+transcript ends early is marked as such.
 
 ## Settings
 
