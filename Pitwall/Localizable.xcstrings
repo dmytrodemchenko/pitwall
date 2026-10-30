@@ -20,16 +20,7 @@
         }
       }
     },
-    "%@ · 7 days" : {
-
-    },
-    "%@ less one tier down" : {
-
-    },
     "%@ sessions" : {
-
-    },
-    "%@ tok" : {
 
     },
     "%@ tok · %@" : {
@@ -78,6 +69,9 @@
     "×%@" : {
 
     },
+    "$%@" : {
+
+    },
     "Alerts and Allow/Deny prompts can't be shown; permission requests go to the terminal." : {
 
     },
@@ -85,15 +79,6 @@
 
     },
     "API" : {
-
-    },
-    "avg · median" : {
-
-    },
-    "Cache hit ratio" : {
-
-    },
-    "Config changes · 30 days" : {
 
     },
     "Context" : {
@@ -106,9 +91,6 @@
 
     },
     "iTerm2" : {
-
-    },
-    "Models · 7 days" : {
 
     },
     "No active sessions" : {
@@ -135,13 +117,7 @@
     "Oldest usage leaves the window in %@" : {
 
     },
-    "Pipeline · 7 days" : {
-
-    },
     "Pitwall" : {
-
-    },
-    "Projects · 7 days" : {
 
     },
     "Sessions" : {
@@ -157,9 +133,6 @@
 
     },
     "Terminal" : {
-
-    },
-    "tokens · cost" : {
 
     },
     "Total" : {

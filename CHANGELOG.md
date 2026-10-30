@@ -2,6 +2,11 @@
 
 Versions come from git tags (`v1.2` → 1.2); the build number is the commit count (`scripts/release.sh`).
 
+## Unreleased
+
+- Analytics redesign: four summary tiles (7-day cost with the change against the week before, cache hit ratio with a 7-day sparkline, verifier pass rate, savings on cheaper models), each section on its own card, a cleaner cost chart that labels the peak day, and project rows with share bars that double as the chart's legend.
+- Chart colors checked for color blindness: orange, blue, aqua, violet, magenta. The status colors (green, yellow) are no longer used for projects.
+
 ## 1.3
 
 - Analytics › Models: per pipeline agent, the model it runs on, its 7-day cost, what the same tokens cost one tier down ("On Sonnet 5.5: $7.47 less (−50%)"), and the verifier result after its runs, per model. Subagent usage is now tagged with its agent type (from `.meta.json`); older rows are tagged once on the next launch.

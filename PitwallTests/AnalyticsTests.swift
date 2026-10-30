@@ -35,6 +35,18 @@ final class AnalyticsTests: XCTestCase {
         XCTAssertEqual(r.projects.count, 8)
     }
 
+    /// The week before (days 7–13 ago) is compared with this week; nothing that old means no comparison.
+    func testChangeAgainstTheWeekBefore() throws {
+        let now = t0
+        let r = CostReport(items: [item("a", daysAgo: 0, input: 3_000_000, now: now), item("a", daysAgo: 7, now: now),
+                                   item("a", daysAgo: 13, now: now), item("a", daysAgo: 14, input: 9_000_000, now: now)],
+                           prices: prices, now: now)
+        XCTAssertEqual(r.total, 15)
+        XCTAssertEqual(r.previous, 10)
+        XCTAssertEqual(try XCTUnwrap(r.change), 0.5, accuracy: 1e-9)
+        XCTAssertNil(CostReport(items: [item("a", daysAgo: 0, now: now)], prices: prices, now: now).change)
+    }
+
     func testImportDeduplicatesAndKeepsThirtyDays() async throws {
         let root = tempDir()
         let dir = root.appending(path: "-p-proj")
