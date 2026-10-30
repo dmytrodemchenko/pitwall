@@ -69,13 +69,13 @@ private struct TaskRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(task.prompt).font(.callout).lineLimit(2)
+                Text(task.prompt.split(whereSeparator: \.isNewline).joined(separator: " ")).font(.callout).lineLimit(2)
                 Spacer(minLength: 0)
                 TaskStatus(task: task, compact: true)
             }
             Text("\(task.project) · \(task.start.formatted(date: .abbreviated, time: .shortened))")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            Text("\(GateRun.format(task.duration)) · ^[\(task.calls) tool call](inflect: true) · \(UsageText.cost(task.cost(prices), estimate: true))")
+            Text("\(GateRun.format(task.duration)) · \(UsageText.tokens(task.tokens.total)) tokens · \(UsageText.cost(task.cost(prices), estimate: true))")
                 .font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
         }
         .padding(.vertical, 3)
@@ -132,10 +132,18 @@ struct TaskDetail: View {
                     }
                 }
                 Metrics(task: task, prices: prices)
-                if !task.agents.isEmpty || !task.files.isEmpty {
-                    HStack(alignment: .top, spacing: 12) {
-                        if !task.files.isEmpty { Card { FileList(files: task.files) } }
-                        if !task.agents.isEmpty { Card { AgentList(task: task) } }
+                if !task.agents.isEmpty { Card { AgentList(task: task, prices: prices) } }
+                if !task.files.isEmpty { Card { FileList(files: task.files, start: task.start) } }
+                let problems = task.events.filter { $0.failed || $0.kind == .retry || $0.kind == .interrupt }
+                if !problems.isEmpty {
+                    Card {
+                        CardHeader(title: "Errors and retries", detail: "\(problems.count)")
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(problems.prefix(20)) { EventRow(event: $0, start: task.start) }
+                        }
+                        if problems.count > 20 {
+                            Text("\(problems.count - 20) more in the timeline (Errors filter).").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 Card {
@@ -166,30 +174,40 @@ private struct Metrics: View {
     var body: some View {
         let t = task.tokens, slowest = task.events.filter(\.isCall).compactMap(\.duration).max()
         let models = Set(task.usage.map(\.model)).map(ModelAdvice.name).sorted().joined(separator: ", ")
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-            Tile(title: "Duration", value: GateRun.format(task.duration),
-                 detail: task.start.formatted(date: .omitted, time: .shortened) + " – " + task.end.formatted(date: .omitted, time: .shortened))
-            Tile(title: "Estimated cost", value: UsageText.cost(task.cost(prices)), detail: models.isEmpty ? "no usage recorded" : models)
-            Tile(title: "Tokens", value: UsageText.tokens(t.total),
-                 detail: "\(UsageText.tokens(t.output)) out · \(UsageText.tokens(t.cacheRead)) cache read")
-            Tile(title: "Tool calls", value: "\(task.calls)", detail: slowest.map { "slowest \(GateRun.format($0))" } ?? "none")
-            Tile(title: "Errors", value: "\(task.errors)",
-                 detail: task.retries == 1 ? "1 API retry" : "\(task.retries) API retries",
-                 tint: task.errors + task.retries > 0 ? Color(.failure) : .secondary)
-            Tile(title: "Files", value: "\(task.files.count)",
-                 detail: "\(task.files.filter { $0.ops.contains { $0 != .read } }.count) changed")
+        let cost = task.cost(prices), subagents = task.contributions(prices).filter { $0.agent != nil }
+        let subagentCost = subagents.compactMap(\.cost).reduce(0, +)
+        VStack(alignment: .leading, spacing: 6) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+                Tile(title: "Duration", value: GateRun.format(task.duration),
+                     detail: task.start.formatted(date: .omitted, time: .shortened) + " – " + task.end.formatted(date: .omitted, time: .shortened))
+                Tile(title: "Estimated cost", value: UsageText.cost(cost), detail: models.isEmpty ? "no usage recorded" : models)
+                Tile(title: "Input tokens", value: UsageText.tokens(t.input + t.cacheRead + t.cacheWrite5m + t.cacheWrite1h),
+                     detail: "\(UsageText.tokens(t.input)) new · \(UsageText.tokens(t.cacheRead)) cached")
+                Tile(title: "Output tokens", value: UsageText.tokens(t.output),
+                     detail: "\(UsageText.tokens(t.cacheWrite5m + t.cacheWrite1h)) written to cache")
+                Tile(title: "Tool calls", value: "\(task.calls)", detail: slowest.map { "slowest \(GateRun.format($0))" } ?? "none")
+                Tile(title: "Errors", value: "\(task.errors)",
+                     detail: task.retries == 1 ? "1 API retry" : "\(task.retries) API retries",
+                     tint: task.errors + task.retries > 0 ? Color(.failure) : .secondary)
+                Tile(title: "Files changed", value: "\(task.files.filter(\.changed).count)", detail: "\(task.files.count) touched")
+                Tile(title: "Subagents", value: "\(subagents.count)",
+                     detail: subagents.isEmpty ? "none" : cost.map { $0 > 0 ? "\(Int((subagentCost / $0 * 100).rounded()))% of cost" : "no cost" } ?? "cost unknown")
+            }
+            Text("Times, tokens, tool calls and files come from the transcript. Cost is an estimate from Pitwall's price table.")
+                .font(.caption2).foregroundStyle(.secondary)
         }
     }
 }
 
 private struct FileList: View {
-    let files: [(path: String, ops: [ReplayEvent.FileOp])]
+    let files: [FileActivity]
+    let start: Date
     @State private var all = false
 
     var body: some View {
-        CardHeader(title: "Files", detail: "\(files.count)")
+        CardHeader(title: "Files", detail: "\(files.filter(\.changed).count) changed · \(files.count) touched")
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(files.prefix(all ? files.count : 8).enumerated()), id: \.offset) { _, f in
+            ForEach(files.prefix(all ? files.count : 8), id: \.path) { f in
                 HStack(spacing: 6) {
                     ForEach(f.ops, id: \.self) { op in
                         Text(op.rawValue)
@@ -200,6 +218,13 @@ private struct FileList: View {
                             .foregroundStyle(op == .read ? .secondary : .primary)
                     }
                     Text(f.path).font(.caption.monospaced()).lineLimit(1).truncationMode(.middle).help(f.path)
+                    Spacer(minLength: 8)
+                    if f.agents.contains(where: { $0 != nil }) {
+                        ForEach(f.agents.map { $0 ?? "main" }, id: \.self) { AgentBadge(name: $0) }
+                    }
+                    Text("+" + GateRun.format(f.first.timeIntervalSince(start)))
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        .help("First touched at \(f.first.formatted(date: .omitted, time: .standard))")
                 }
             }
             if files.count > 8, !all {
@@ -211,27 +236,48 @@ private struct FileList: View {
 
 private struct AgentList: View {
     let task: ReplayTask
+    let prices: PriceTable
 
     var body: some View {
-        CardHeader(title: "Agents", detail: "\(task.agents.count)")
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(task.agents, id: \.self) { agent in
-                let events = task.events.filter { $0.agent == agent }
-                let span = events.map(\.at).min().flatMap { a in events.map { $0.end ?? $0.at }.max().map { $0.timeIntervalSince(a) } }
-                HStack {
-                    Text(agent).font(.caption.weight(.medium))
-                    Spacer()
-                    Text("^[\(events.filter(\.isCall).count) call](inflect: true) · \(GateRun.format(span ?? 0))")
-                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+        let rows = task.contributions(prices), total = task.cost(prices) ?? 0
+        CardHeader(title: "Agents", detail: "main + \(rows.count - 1)")
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+            GridRow {
+                Text("Agent"); Text("Calls"); Text("Time"); Text("Tokens"); Text("Est. cost")
+            }
+            .font(.caption2).foregroundStyle(.secondary)
+            ForEach(rows, id: \.agent) { r in
+                GridRow {
+                    Text(r.agent ?? "main agent").font(.caption.weight(.medium))
+                    Text("\(r.calls)")
+                    Text(GateRun.format(r.time))
+                    Text(UsageText.tokens(r.tokens.total))
+                    Text(UsageText.cost(r.cost) + (total > 0 ? r.cost.map { " (\(Int(($0 / total * 100).rounded()))%)" } ?? "" : ""))
                 }
+                .font(.caption.monospacedDigit())
             }
         }
     }
 }
 
+private struct AgentBadge: View {
+    let name: String
+
+    var body: some View {
+        Text(name)
+            .font(.caption2.weight(.medium))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(Color(.chart3).opacity(0.18), in: Capsule())
+            .lineLimit(1)
+    }
+}
+
 private struct Timeline: View {
+    static let page = 200
     let task: ReplayTask
     @Binding var filter: ReplayFilter
+    @State private var limit = Timeline.page
 
     var body: some View {
         let shown = task.events.filter(filter.matches)
@@ -245,7 +291,13 @@ private struct Timeline: View {
             Text("Nothing to show for this filter.").font(.caption).foregroundStyle(.secondary)
         }
         LazyVStack(alignment: .leading, spacing: 2) {
-            ForEach(shown) { EventRow(event: $0, start: task.start) }
+            ForEach(shown.prefix(limit)) { EventRow(event: $0, start: task.start) }
+        }
+        .onChange(of: filter) { limit = Timeline.page }
+        if shown.count > limit {
+            Button("Show \(min(Timeline.page, shown.count - limit)) more of \(shown.count - limit) left") { limit += Timeline.page }
+                .buttonStyle(.link)
+                .font(.caption)
         }
     }
 }
@@ -262,19 +314,13 @@ private struct EventRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("+" + GateRun.format(event.at.timeIntervalSince(start)))
+                Text((event.approximate ? "≈+" : "+") + GateRun.format(event.at.timeIntervalSince(start)))
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     .frame(width: 58, alignment: .trailing)
                 Image(systemName: event.icon).foregroundStyle(event.tint).frame(width: 16)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        if let agent = event.agent {
-                            Text(agent)
-                                .font(.caption2.weight(.medium))
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1)
-                                .background(Color(.chart3).opacity(0.18), in: Capsule())
-                        }
+                        if let agent = event.agent { AgentBadge(name: agent) }
                         Text(event.title).font(.callout).lineLimit(open ? nil : 1)
                     }
                     if event.failed, let result = event.result, !open {
@@ -310,6 +356,7 @@ private struct EventRow: View {
 private extension ReplayEvent {
     var icon: String {
         switch kind {
+        case .prompt: "person.fill"
         case .message: "text.bubble"
         case .tool:
             switch tool {
@@ -324,8 +371,10 @@ private extension ReplayEvent {
         case .file(.edit): "pencil"
         case .file(.delete): "trash"
         case .agent: "person.2"
+        case .agentDone: "person.2.fill"
         case .retry: "arrow.clockwise"
         case .interrupt: "stop.circle"
+        case .end: title == "Task completed" ? "checkmark.circle.fill" : "circle.dashed"
         }
     }
 
@@ -333,7 +382,8 @@ private extension ReplayEvent {
         if failed, kind != .retry { return Color(.failure) }
         switch kind {
         case .retry, .interrupt: return Color(.waiting)
-        case .agent: return Color(.chart3)
+        case .agent, .agentDone: return Color(.chart3)
+        case .end: return title == "Task completed" ? Color(.running) : Color(.idle)
         case .file(let op): return op.tint
         default: return .secondary
         }

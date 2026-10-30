@@ -63,7 +63,9 @@ final class TaskReplayTests: XCTestCase {
         XCTAssertTrue(task.isComplete)
         XCTAssertEqual(task.events.first { $0.id == "t2" }?.result, "String to replace not found")
         XCTAssertEqual(task.events.first { $0.id == "t2" }?.duration, 2)
-        XCTAssertEqual(task.events.map(\.kind), [.file(.read), .file(.edit), .file(.edit), .file(.create), .file(.edit), .file(.delete), .message])
+        XCTAssertEqual(task.events.map(\.kind),
+                       [.prompt, .file(.read), .file(.edit), .file(.edit), .file(.create), .file(.edit), .file(.delete), .message, .end])
+        XCTAssertEqual(task.events.last?.title, "Task completed")
         XCTAssertEqual(task.files.map(\.path), ["cart.swift", "new.swift", "old.swift", "tmp.txt"], "paths relative to the project; the failed edit adds nothing")
         XCTAssertEqual(task.files.map(\.ops), [[.read, .edit], [.create], [.edit], [.delete]])
         XCTAssertEqual(task.tokens.output, 7000)
@@ -83,7 +85,7 @@ final class TaskReplayTests: XCTestCase {
         ])
         let tasks = TaskReplay.tasks(transcript: url)
         XCTAssertEqual(tasks.count, 1)
-        XCTAssertEqual(tasks[0].events.map(\.id), ["m1/\("Searching.".hashValue)", "t1"])
+        XCTAssertEqual(tasks[0].events.map(\.id), ["p1/prompt", "m1/\("Searching.".hashValue)", "t1", "p1/end"])
         XCTAssertEqual(tasks[0].usage.count, 1, "usage once per message id")
     }
 
@@ -138,13 +140,17 @@ final class TaskReplayTests: XCTestCase {
 
         let tasks = TaskReplay.tasks(transcript: url)
         let task = tasks[0]
-        XCTAssertEqual(task.events.map(\.id), ["t1", "st1", "t2", "t3", "sm2/\("VERDICT: FAIL".hashValue)", "m4/\("Shipped.".hashValue)"])
-        XCTAssertEqual(task.events.map(\.agent), [nil, "verifier", nil, nil, "verifier", nil])
+        XCTAssertEqual(task.events.map(\.id), ["p1/prompt", "t1", "st1", "t2", "t3", "sm2/\("VERDICT: FAIL".hashValue)", "t1/done",
+                                               "m4/\("Shipped.".hashValue)", "p1/end"])
+        XCTAssertEqual(task.events.map(\.agent), [nil, nil, "verifier", nil, nil, "verifier", "verifier", nil, nil])
+        XCTAssertEqual(task.events[6].title, "verifier finished")
+        XCTAssertEqual(task.calls, 4, "prompt, completion and the subagent's finish are not tool calls")
         XCTAssertEqual(task.response, "Shipped.")
         XCTAssertEqual(task.agents, ["verifier"])
         XCTAssertEqual(task.errors, 1)
         XCTAssertEqual(task.tokens.output, 5000, "the subagent's tokens count toward the task")
-        XCTAssertTrue(tasks[1].events.isEmpty)
+        XCTAssertEqual(tasks[1].events.map(\.kind), [.prompt, .end])
+        XCTAssertEqual(tasks[1].events.last?.title, "No final response in the transcript")
     }
 
     /// Slash commands read as typed; meta lines, compaction summaries, command output and tool results are not prompts.
@@ -162,24 +168,116 @@ final class TaskReplayTests: XCTestCase {
         ])
         let tasks = TaskReplay.tasks(transcript: url)
         XCTAssertEqual(tasks.map(\.prompt), ["/review 42", "Go on"], "a command logged twice is one task; paste markers go")
+        XCTAssertEqual(TaskReplay.prompt("Check this\n\n\n\n<pasted_content id=\"1\">\n# Spec\n</pasted_content id=\"1\">"),
+                       "Check this\n\n# Spec", "blank lines collapse")
         XCTAssertTrue(tasks[0].interrupted)
-        XCTAssertEqual(tasks[0].events.map(\.kind), [.interrupt, .retry])
-        XCTAssertEqual(tasks[0].events.last?.title, "API error, retry 2 of 10")
+        XCTAssertEqual(tasks[0].events.map(\.kind), [.prompt, .interrupt, .retry, .end])
+        XCTAssertEqual(tasks[0].events[2].title, "API error, retry 2 of 10")
+        XCTAssertEqual(tasks[0].events.last?.title, "Stopped: interrupted by the user")
         XCTAssertEqual(tasks[0].retries, 1)
+        XCTAssertEqual(tasks[0].errors, 0, "a retry is not also an error")
+    }
+
+    /// A line without a timestamp takes the previous line's time and is marked approximate; nothing is dropped.
+    func testMissingTimestamps() throws {
+        let untimed = result("r1", "t1", at: 0).replacingOccurrences(of: #""timestamp":"\#(ts(0))","#, with: "")
+        let url = try write([
+            #"{"type":"user","uuid":"x","cwd":"/x/shop","message":{"role":"user","content":"before any time"}}"#,
+            prompt("p1", "Go", at: 0),
+            assistant("a1", message: "m1", at: 5, block: tool("t1", "Read", #"{"file_path":"/x/shop/a.swift"}"#)),
+            untimed,
+            assistant("a2", message: "m2", at: 9, block: text("Done.")),
+        ])
+        let task = try XCTUnwrap(TaskReplay.tasks(transcript: url).first)
+        XCTAssertEqual(task.prompt, "Go", "a line with no time and nothing before it is skipped")
+        let read = try XCTUnwrap(task.events.first { $0.id == "t1" })
+        XCTAssertEqual(read.end, t0 + 5, "the result inherits the previous time")
+        XCTAssertEqual(read.result, "ok")
+        XCTAssertFalse(read.approximate, "the call itself had a time")
+        XCTAssertEqual(task.duration, 9)
+    }
+
+    /// Tokens and cost split by agent add up to the task's totals; each agent's usage comes from its own transcript.
+    func testCostPerAgent() throws {
+        let url = try write([
+            prompt("p1", "Ship it", at: 0),
+            assistant("a1", message: "m1", at: 1, block: tool("t1", "Agent", #"{"subagent_type":"verifier"}"#), output: 2000),
+            result("r1", "t1", at: 9),
+            assistant("a2", message: "m2", at: 10, block: text("Shipped."), output: 1000),
+        ])
+        let sub = url.deletingPathExtension().appending(path: "subagents")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        try [
+            assistant("s1", message: "sm1", at: 2, block: tool("st1", "Edit", #"{"file_path":"/x/shop/a.swift"}"#), output: 500),
+            result("s2", "st1", at: 3),
+            assistant("s3", message: "sm2", at: 8, block: text("VERDICT: PASS"), output: 500),
+        ].joined(separator: "\n").write(to: sub.appending(path: "agent-v.jsonl"), atomically: true, encoding: .utf8)
+        try #"{"agentType":"verifier","toolUseId":"t1"}"#.write(to: sub.appending(path: "agent-v.meta.json"), atomically: true, encoding: .utf8)
+
+        let task = try XCTUnwrap(TaskReplay.tasks(transcript: url).first)
+        let rows = task.contributions(prices)
+        XCTAssertEqual(rows.map(\.agent), [nil, "verifier"])
+        XCTAssertEqual(rows.map(\.tokens.output), [3000, 1000])
+        XCTAssertEqual(rows.map(\.calls), [1, 1])
+        XCTAssertEqual(rows.map(\.time), [10, 8], "the task; the verifier's Agent call")
+        XCTAssertEqual(try XCTUnwrap(rows[0].cost) + XCTUnwrap(rows[1].cost), try XCTUnwrap(task.cost(prices)), accuracy: 1e-12)
+        XCTAssertEqual(try XCTUnwrap(rows[1].cost), (20 * 4 + 1000 * 20) / 1_000_000, accuracy: 1e-12)
+        let file = try XCTUnwrap(task.files.first)
+        XCTAssertEqual(file.agents, ["verifier"])
+        XCTAssertEqual(file.first, t0 + 2)
+        XCTAssertTrue(file.changed)
+    }
+
+    /// Reads alone never count as changes; a file's agents and first/last times are kept.
+    func testFileActivity() throws {
+        let url = try write([
+            prompt("p1", "Look", at: 0),
+            assistant("a1", message: "m1", at: 1, block: tool("t1", "Read", #"{"file_path":"/x/shop/a.swift"}"#)),
+            result("r1", "t1", at: 2),
+            assistant("a2", message: "m2", at: 30, block: tool("t2", "Read", #"{"file_path":"/x/shop/a.swift"}"#)),
+            result("r2", "t2", at: 31),
+            assistant("a3", message: "m3", at: 40, block: tool("t3", "Glob", #"{"pattern":"*.swift"}"#)),
+            result("r3", "t3", at: 41),
+        ])
+        let task = try XCTUnwrap(TaskReplay.tasks(transcript: url).first)
+        XCTAssertEqual(task.files, [FileActivity(path: "a.swift", ops: [.read], agents: [nil], first: t0 + 1, last: t0 + 30)])
+        XCTAssertFalse(task.files[0].changed)
+    }
+
+    /// A long session: 5,000 tool calls with results plus repeated lines reconstruct exactly, in a reasonable time.
+    func testLargeTranscript() throws {
+        var lines = [prompt("p1", "Refactor everything", at: 0)]
+        for i in 0..<5000 {
+            let call = assistant("a\(i)", message: "m\(i)", at: Double(i), block: tool("t\(i)", "Edit", #"{"file_path":"/x/shop/f\#(i % 50).swift"}"#), output: 10)
+            lines += [call, call, result("r\(i)", "t\(i)", at: Double(i) + 0.5, error: i % 1000 == 0)]
+        }
+        lines.append(assistant("z", message: "z", at: 5001, block: text("Done.")))
+        let url = try write(lines)
+        let started = Date()
+        let task = try XCTUnwrap(TaskReplay.tasks(transcript: url).first)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5)
+        XCTAssertEqual(task.calls, 5000)
+        XCTAssertEqual(task.errors, 5)
+        XCTAssertEqual(task.usage.count, 5001)
+        XCTAssertEqual(task.files.count, 50)
+        XCTAssertEqual(task.events.count, 5003)
+        XCTAssertEqual(task.events.map(\.at), task.events.map(\.at).sorted())
+        XCTAssertEqual(task.response, "Done.")
     }
 
     func testFilters() {
         func e(_ kind: ReplayEvent.Kind, agent: String? = nil, failed: Bool = false) -> ReplayEvent {
             ReplayEvent(id: UUID().uuidString, at: t0, agent: agent, kind: kind, title: "", failed: failed)
         }
-        let events = [e(.message), e(.tool), e(.file(.edit)), e(.agent), e(.tool, agent: "verifier"), e(.tool, failed: true), e(.retry)]
+        let events = [e(.prompt), e(.message), e(.tool), e(.file(.edit)), e(.agent), e(.tool, agent: "verifier"),
+                      e(.agentDone, agent: "verifier"), e(.tool, failed: true), e(.retry), e(.interrupt), e(.end)]
         func count(_ f: ReplayFilter) -> Int { events.filter(f.matches).count }
-        XCTAssertEqual(count(.all), 7)
+        XCTAssertEqual(count(.all), 11)
         XCTAssertEqual(count(.tools), 5)
         XCTAssertEqual(count(.files), 1)
-        XCTAssertEqual(count(.agents), 2)
-        XCTAssertEqual(count(.errors), 2)
-        XCTAssertEqual(count(.messages), 1)
+        XCTAssertEqual(count(.agents), 3)
+        XCTAssertEqual(count(.errors), 3)
+        XCTAssertEqual(count(.messages), 3)
     }
 
     /// History: newest first across sessions, unchanged files reuse the cache, and a session scope narrows it.

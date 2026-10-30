@@ -3,7 +3,7 @@ import Observation
 
 struct ReplayEvent: Identifiable, Equatable {
     enum Kind: Equatable {
-        case message, tool, file(FileOp), agent, retry, interrupt
+        case prompt, message, tool, file(FileOp), agent, agentDone, retry, interrupt, end
     }
 
     enum FileOp: String, CaseIterable {
@@ -16,11 +16,13 @@ struct ReplayEvent: Identifiable, Equatable {
     var kind: Kind
     var title: String
     var tool: String?
+    var subagent: String?
     var detail: String?
     var path: String?
     var end: Date?
     var failed = false
     var result: String?
+    var approximate = false
 
     var isCall: Bool {
         switch kind {
@@ -42,9 +44,9 @@ enum ReplayFilter: String, CaseIterable, Identifiable {
         case .all: true
         case .tools: e.isCall
         case .files: if case .file = e.kind { true } else { false }
-        case .agents: e.agent != nil || e.kind == .agent
+        case .agents: e.agent != nil || e.kind == .agent || e.kind == .agentDone
         case .errors: e.failed || e.kind == .retry || e.kind == .interrupt
-        case .messages: e.kind == .message
+        case .messages: [.prompt, .message, .end].contains(e.kind)
         }
     }
 }
@@ -59,12 +61,13 @@ struct ReplayTask: Identifiable, Equatable {
     var end: Date
     var events: [ReplayEvent] = []
     var usage: [UsageEntry] = []
+    var usageByAgent: [String: [UsageEntry]] = [:]
     var interrupted = false
     var stopReason: String?
 
     var duration: TimeInterval { max(0, end.timeIntervalSince(start)) }
     var calls: Int { events.filter(\.isCall).count }
-    var errors: Int { events.filter(\.failed).count }
+    var errors: Int { events.filter { $0.failed && $0.kind != .retry }.count }
     var retries: Int { events.filter { $0.kind == .retry }.count }
     var tokens: TokenUsage { usage.tokens }
     var isComplete: Bool { response != nil && !interrupted && (stopReason ?? "end_turn") == "end_turn" }
@@ -74,21 +77,54 @@ struct ReplayTask: Identifiable, Equatable {
         return events.compactMap(\.agent).filter { seen.insert($0).inserted }
     }
 
-    var files: [(path: String, ops: [ReplayEvent.FileOp])] {
-        var order: [String] = [], ops: [String: Set<ReplayEvent.FileOp>] = [:]
+    var files: [FileActivity] {
+        var order: [String] = [], found: [String: FileActivity] = [:]
         for e in events {
             guard case .file(let op) = e.kind, let path = e.path, !e.failed else { continue }
-            if ops[path] == nil { order.append(path) }
-            ops[path, default: []].insert(op)
+            if found[path] == nil { order.append(path) }
+            var f = found[path] ?? FileActivity(path: path, ops: [], agents: [], first: e.at, last: e.at)
+            if !f.ops.contains(op) { f.ops = ReplayEvent.FileOp.allCases.filter { f.ops.contains($0) || $0 == op } }
+            if !f.agents.contains(e.agent) { f.agents.append(e.agent) }
+            f.last = max(f.last, e.at)
+            found[path] = f
         }
-        return order.map { p in (p, ReplayEvent.FileOp.allCases.filter { ops[p]!.contains($0) }) }
+        return order.compactMap { found[$0] }
     }
 
     func cost(_ prices: PriceTable) -> Double? { prices.cost(of: usage) }
 
+    func contributions(_ prices: PriceTable) -> [AgentContribution] {
+        ([nil] + agents.map(Optional.some)).map { name in
+            let own = events.filter { $0.agent == name }
+            let entries = usageByAgent[name ?? ""] ?? []
+            let runs = events.filter { $0.kind == .agent && $0.subagent == name }.compactMap(\.duration)
+            let span = own.map(\.at).min().flatMap { a in own.map { $0.end ?? $0.at }.max().map { $0.timeIntervalSince(a) } }
+            let time = name == nil ? duration : runs.isEmpty ? span ?? 0 : runs.reduce(0, +)
+            return AgentContribution(agent: name, calls: own.filter(\.isCall).count, time: time, tokens: entries.tokens,
+                                     cost: prices.cost(of: entries))
+        }
+    }
+
     static func == (a: Self, b: Self) -> Bool {
         a.id == b.id && a.end == b.end && a.events == b.events && a.response == b.response
     }
+}
+
+struct FileActivity: Equatable {
+    let path: String
+    var ops: [ReplayEvent.FileOp]
+    var agents: [String?]
+    var first, last: Date
+
+    var changed: Bool { ops.contains { $0 != .read } }
+}
+
+struct AgentContribution: Equatable {
+    let agent: String?
+    let calls: Int
+    let time: TimeInterval
+    let tokens: TokenUsage
+    let cost: Double?
 }
 
 enum TaskReplay {
@@ -114,12 +150,13 @@ enum TaskReplay {
 
     static func lines(_ url: URL) -> [Data] {
         guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return [] }
-        return data.split(separator: UInt8(ascii: "\n")).map { Data($0) }
+        return data.split(separator: UInt8(ascii: "\n"))
     }
 
     static func prompt(_ text: String) -> String {
         guard let name = tag("command-name", in: text) else {
             return text.replacingOccurrences(of: #"</?pasted_content[^>]*>"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: #"\n\s*\n(\s*\n)+"#, with: "\n\n", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
         let args = tag("command-args", in: text) ?? ""
@@ -146,14 +183,15 @@ enum TaskReplay {
         let session: String
         var tasks: [ReplayTask] = []
         var seenLines = Set<String>(), seenMessages = Set<String>(), calls: [String: (task: Int, event: Int)] = [:]
-        var seq = 0, order: [String: Int] = [:]
+        var seq = 0, order: [String: Int] = [:], lastAt: Date?, approximate = false
 
         init(session: String) { self.session = session }
 
         mutating func subagent(_ lines: [Data], agent: String, toolUse: String?) {
             var target = toolUse.flatMap { calls[$0]?.task }
+            lastAt = nil
             for line in lines {
-                guard let d = object(line), let at = date(d["timestamp"]), isNew(d) else { continue }
+                guard let d = object(line), let at = time(d), isNew(d) else { continue }
                 if target == nil { target = tasks.lastIndex { $0.start <= at } ?? (tasks.isEmpty ? nil : 0) }
                 guard let target else { return }
                 add(d, line: line, at: at, task: target, agent: agent)
@@ -161,7 +199,7 @@ enum TaskReplay {
         }
 
         mutating func add(_ line: Data, agent: String?) {
-            guard let d = object(line), let at = date(d["timestamp"]), isNew(d) else { return }
+            guard let d = object(line), let at = time(d), isNew(d) else { return }
             let agent = d["isSidechain"] as? Bool == true ? "subagent" : agent
             if d["type"] as? String == "user", agent == nil, let text = Self.promptText(d) {
                 if text.hasPrefix("[Request interrupted") {
@@ -172,9 +210,11 @@ enum TaskReplay {
                     return
                 }
                 let cwd = d["cwd"] as? String, prompt = TaskReplay.prompt(text)
-                if let last = tasks.last, last.events.isEmpty, last.usage.isEmpty, last.prompt == prompt { return }
+                if let last = tasks.last, last.events.allSatisfy({ $0.kind == .prompt }), last.usage.isEmpty, last.prompt == prompt { return }
                 tasks.append(ReplayTask(id: d["uuid"] as? String ?? "\(session)#\(tasks.count)", session: session,
                                         project: SessionStore.projectName(cwd), prompt: prompt, start: at, end: at))
+                append(ReplayEvent(id: tasks[tasks.count - 1].id + "/prompt", at: at, kind: .prompt,
+                                   title: TaskReplay.preview(prompt, limit: 160), detail: TaskReplay.preview(prompt)), to: tasks.count - 1)
                 return
             }
             if tasks.isEmpty, ["assistant", "user"].contains(d["type"] as? String) {
@@ -192,7 +232,9 @@ enum TaskReplay {
             case "assistant":
                 guard let message = d["message"] as? [String: Any] else { return }
                 if let record = UsageRecord.parse(line), seenMessages.insert(record.messageID).inserted {
-                    tasks[t].usage.append(record.entry)
+                    let entry = UsageEntry(model: record.entry.model, timestamp: at, tokens: record.entry.tokens)
+                    tasks[t].usage.append(entry)
+                    tasks[t].usageByAgent[agent ?? "", default: []].append(entry)
                 }
                 if agent == nil, let stop = message["stop_reason"] as? String { tasks[t].stopReason = stop }
                 for block in message["content"] as? [[String: Any]] ?? [] {
@@ -245,7 +287,19 @@ enum TaskReplay {
             (d["uuid"] as? String).map { seenLines.insert($0).inserted } ?? true
         }
 
+        private mutating func time(_ d: [String: Any]) -> Date? {
+            if let at = date(d["timestamp"]) {
+                lastAt = at
+                approximate = false
+                return at
+            }
+            approximate = true
+            return lastAt
+        }
+
         private mutating func append(_ e: ReplayEvent, to t: Int) {
+            var e = e
+            e.approximate = approximate
             order[e.id] = seq
             seq += 1
             tasks[t].events.append(e)
@@ -254,7 +308,21 @@ enum TaskReplay {
 
         func finish() -> [ReplayTask] {
             tasks.filter { $0.prompt != TaskReplay.noPrompt || !$0.events.isEmpty }.map { task in
-                var task = task
+                var task = task, order = order
+                for e in task.events where e.kind == .agent {
+                    guard let end = e.end else { continue }
+                    let name = e.subagent ?? "agent"
+                    let done = ReplayEvent(id: e.id + "/done", at: end, agent: e.subagent, kind: .agentDone,
+                                           title: e.failed ? "\(name) failed" : "\(name) finished", result: e.result)
+                    order[done.id] = order[e.id].map { $0 + 1 } ?? 0
+                    task.events.append(done)
+                }
+                let end = ReplayEvent(id: task.id + "/end", at: task.end, kind: .end,
+                                      title: task.isComplete ? "Task completed"
+                                          : task.interrupted ? "Stopped: interrupted by the user"
+                                          : "No final response in the transcript")
+                order[end.id] = Int.max
+                task.events.append(end)
                 task.events.sort { ($0.at, order[$0.id] ?? 0) < ($1.at, order[$1.id] ?? 0) }
                 return task
             }
@@ -276,7 +344,8 @@ enum TaskReplay {
             default: kind = .tool
             }
             let title = name == "Write" ? action.text.replacingOccurrences(of: "Editing", with: "Writing") : action.text
-            return ReplayEvent(id: id, at: at, kind: kind, title: title, tool: name, detail: action.full == action.text ? detail : action.full,
+            return ReplayEvent(id: id, at: at, kind: kind, title: title, tool: name,
+                               subagent: kind == .agent ? input["subagent_type"] as? String : nil, detail: action.full == action.text ? detail : action.full,
                                path: (kind == .file(.delete) ? removed(detail) : path).map { ToolAction.shorten($0, cwd: cwd, home: NSHomeDirectory()) })
         }
 

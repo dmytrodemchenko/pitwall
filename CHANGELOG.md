@@ -9,6 +9,11 @@ Versions come from git tags (`v1.2` → 1.2); the build number is the commit cou
 - Demo mode: two weeks of usage and subagent transcripts, so the summary tiles and Models have data. The demo event log is written oldest first, so its subagent runs are no longer counted twice.
 - README: screenshots of the Analytics tab (demo data).
 
+## Unreleased
+
+- Task Replay, more detail: input, output and cache tokens; each agent's calls, time, tokens and share of the cost; for each file, which agent touched it and when; an Errors and retries section; the prompt, each subagent's finish and the task's end as timeline events. The task list shows tokens. Long timelines show 200 events at a time.
+- Task Replay: an API retry no longer also counts as an error. A transcript line without a timestamp takes the previous line's time (shown with ≈) instead of being dropped.
+
 ## 1.4
 
 - Analytics redesign: four summary tiles (7-day cost with the change against the week before, cache hit ratio with a 7-day sparkline, verifier pass rate, savings on cheaper models), each section on its own card, a cleaner cost chart that labels the peak day, and project rows with share bars that double as the chart's legend.
