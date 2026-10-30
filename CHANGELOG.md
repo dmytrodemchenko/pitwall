@@ -2,7 +2,7 @@
 
 Versions come from git tags (`v1.2` → 1.2); the build number is the commit count (`scripts/release.sh`).
 
-## Unreleased
+## 1.3
 
 - Analytics › Models: per pipeline agent, the model it runs on, its 7-day cost, what the same tokens cost one tier down ("On Sonnet 5.5: $7.47 less (−50%)"), and the verifier result after its runs, per model. Subagent usage is now tagged with its agent type (from `.meta.json`); older rows are tagged once on the next launch.
 - Cache expiry warning: 2 min before the prompt cache of a waiting session expires, "storefront: prompt cache expires in 2 min. A message after that costs $0.96 more" (5 min or 1 h TTL, from the session's cache writes). Only from $0.50 extra; Settings > Cache.
