@@ -1,0 +1,11 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hook scripts
+        run: hooks/test.sh
+      - name: Unit tests
+        run: xcodebuild -project Pitwall.xcodeproj -scheme Pitwall -destination 'platform=macOS' test

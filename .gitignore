@@ -1,0 +1,18 @@
+# Build output
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Editors and macOS
+.DS_Store
+.idea/
+.vscode/
+
+# Local notes and assistant files (not published)
+CLAUDE.md
+.claude/
+docs/*.md
+
+# Large local media
+demo/

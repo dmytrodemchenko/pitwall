@@ -1,0 +1,170 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "!" : {
+
+    },
+    "·" : {
+
+    },
+    "“Open in IDE” runs this in a login shell with the project folder as its argument, e.g. `webstorm`, `code`, `idea`, `cursor`." : {
+
+    },
+    "%@ · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%@ · 7 days" : {
+
+    },
+    "%@ sessions" : {
+
+    },
+    "%@ tok" : {
+
+    },
+    "%@ tok · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ tok · %2$@"
+          }
+        }
+      }
+    },
+    "%@/%@ tasks" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@/%2$@ tasks"
+          }
+        }
+      }
+    },
+    "%lld sessions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld session"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sessions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "×%@" : {
+
+    },
+    "Alerts and Allow/Deny prompts can't be shown; permission requests go to the terminal." : {
+
+    },
+    "Analytics" : {
+
+    },
+    "API" : {
+
+    },
+    "avg · median" : {
+
+    },
+    "Cache hit ratio" : {
+
+    },
+    "Config changes · 30 days" : {
+
+    },
+    "Context" : {
+
+    },
+    "Context windows per model are in ~/.claude-monitor/context.json (default 200 000 tokens)." : {
+
+    },
+    "estimate" : {
+
+    },
+    "iTerm2" : {
+
+    },
+    "No active sessions" : {
+
+    },
+    "No finished subagent runs in the last 7 days." : {
+
+    },
+    "No usage" : {
+
+    },
+    "No usage in the last 7 days." : {
+
+    },
+    "not set" : {
+
+    },
+    "Notifications are off" : {
+
+    },
+    "Oldest usage leaves the window in %@" : {
+
+    },
+    "Pipeline · 7 days" : {
+
+    },
+    "Pitwall" : {
+
+    },
+    "Projects · 7 days" : {
+
+    },
+    "Sessions" : {
+
+    },
+    "Shows today's cost against it, and notifies at 80% and 100% (once a day each). 0 turns it off." : {
+
+    },
+    "Start Claude Code and sessions appear here live." : {
+
+    },
+    "Subscription" : {
+
+    },
+    "Terminal" : {
+
+    },
+    "tokens · cost" : {
+
+    },
+    "Total" : {
+
+    },
+    "Used for New session, and for Resume when the session's own terminal can't be scripted." : {
+
+    },
+    "Waiting for approval in System Settings → General → Login Items." : {
+
+    },
+    "z" : {
+
+    }
+  },
+  "version" : "1.0"
+}
