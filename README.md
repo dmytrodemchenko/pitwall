@@ -64,13 +64,31 @@
 ## Requirements
 
 - macOS 14 or later.
-- Xcode 16 or later, to build the app.
+- Xcode 16 or later, only to build the app from source.
 - `jq`. macOS 15 and later include it. On macOS 14, install `jq` before you start.
 - Claude Code.
 
 ## Installation
 
 Pitwall has two parts: a Claude Code hook that writes events to a log, and the app that reads the log.
+
+### Quick install
+
+```sh
+curl -fsSL https://github.com/dmytrodemchenko/pitwall/releases/latest/download/install.sh | sh
+```
+
+The script downloads the latest release and checks its SHA-256 checksum. Then it puts `Pitwall.app` in
+`~/Applications`, registers the hooks (as `hooks/install.sh` does) and starts the app. It does not use `sudo`.
+To install a specific version, set `PITWALL_VERSION`, for example `... | PITWALL_VERSION=1.2 sh`.
+
+The release is signed ad hoc, not with an Apple Developer ID. macOS opens it without a warning because files
+that `curl` downloads get no quarantine attribute. If you download the zip in a browser instead, macOS
+blocks the app. Refer to [Troubleshooting](#troubleshooting).
+
+When macOS asks, allow notifications. Then start a Claude Code session.
+
+### Build from source
 
 1. Clone the repository:
 
@@ -297,6 +315,15 @@ The context window of each model. The default is 200,000 tokens.
 
 Pitwall has no automatic updates, because it makes no network requests.
 
+If you used the quick install, run the same command again. It quits Pitwall, replaces the app, updates the
+hook scripts and starts Pitwall again. It does not add duplicate hooks.
+
+macOS links some permissions to the app signature, and an ad-hoc signature changes with each release.
+After an update, macOS can ask again for Automation (iTerm2 or Terminal) and Notifications. You can also have
+to turn on **Start at login** again.
+
+If you built from source:
+
 1. Quit Pitwall.
 2. Get the new version and build the app again. Replace `Pitwall.app` in the Applications folder.
 3. Run `hooks/install.sh` from the new version. The script updates the hook scripts. It does not add duplicates.
@@ -306,23 +333,30 @@ Pitwall keeps your settings, `prices.json`, `context.json` and analytics data.
 
 ## Uninstall
 
-1. Quit Pitwall.
-2. Delete `Pitwall.app`.
-3. Remove the hooks:
+```sh
+curl -fsSL https://github.com/dmytrodemchenko/pitwall/releases/latest/download/uninstall.sh | bash
+```
 
-   ```sh
-   hooks/uninstall.sh
-   ```
+From a clone of the repository, run `hooks/uninstall.sh` instead.
 
-   The script removes only the Pitwall entries from `~/.claude/settings.json`. It makes a backup first.
+The script removes only the Pitwall entries from `~/.claude/settings.json`. It makes a backup first.
+It quits Pitwall and deletes `~/Applications/Pitwall.app`. If you put the app in `/Applications`, delete it yourself.
 
-4. To delete all Pitwall data also, use the `--purge` option:
+To delete all Pitwall data also, use the `--purge` option:
 
-   ```sh
-   hooks/uninstall.sh --purge
-   ```
+```sh
+curl -fsSL https://github.com/dmytrodemchenko/pitwall/releases/latest/download/uninstall.sh | bash -s -- --purge
+```
 
 ## Troubleshooting
+
+**macOS says that Pitwall is damaged or is from an unidentified developer.**
+The app has the quarantine attribute, for example because you downloaded the zip in a browser.
+Install with the `curl` command, or remove the attribute:
+
+```sh
+xattr -dr com.apple.quarantine ~/Applications/Pitwall.app
+```
 
 **Pitwall shows no notifications.**
 Open System Settings > Notifications > Pitwall and turn on **Allow notifications**. If you closed the first
@@ -375,13 +409,19 @@ Demo mode does not read your data. It can run at the same time as your usual cop
 
 ### Release
 
-To build a signed and notarized release from the latest git tag:
+To build a release from the latest git tag, with an ad-hoc signature:
 
 ```sh
-TEAM_ID=<your team ID> scripts/release.sh
+git tag v1.2
+scripts/release.sh --adhoc
+gh release create v1.2 build/release/upload/*
 ```
 
-For the one-time setup, refer to the header of `scripts/release.sh`.
+The `upload` folder has the zip, its checksum, `latest.txt`, `install.sh` and `uninstall.sh`.
+The quick install reads these files from the latest GitHub release.
+
+To sign with a Developer ID and notarize, set `TEAM_ID` and omit `--adhoc`. For the one-time setup, refer to
+the header of `scripts/release.sh`.
 
 ### Project structure
 
@@ -389,7 +429,7 @@ For the one-time setup, refer to the header of `scripts/release.sh`.
 hooks/            Claude Code hooks and the install, uninstall and test scripts
 Pitwall/          App source code
 PitwallTests/     Unit tests (XCTest)
-scripts/          Release script
+scripts/          Release script and the one-line installer
 docs/images/      Images for this file
 ```
 

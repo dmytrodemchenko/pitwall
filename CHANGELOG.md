@@ -12,6 +12,7 @@ Versions come from git tags (`v1.2` → 1.2); the build number is the commit cou
 - Notifications are titled **Pitwall** (were "Claude Code"), so they don't look like they come from Anthropic. MIT license; the README says Pitwall isn't affiliated with Anthropic.
 - Loop alert: "storefront: developer is looping, $3.20 in 10 min" with a **Stop…** button, when one call repeats 5 times with no edit in between, one file gets 12 edits, or the verifier fails 3 times in a row (counted within 10 min, except verifier fails).
 - New mascot, **Pip**: an original round orange pit-crew kid with a cowlick, two legs and round eyes, in place of the Claude Code mascot; the app icon too. Public releases are no longer limited by the trademark.
+- One-line install and update: `curl -fsSL https://github.com/dmytrodemchenko/pitwall/releases/latest/download/install.sh | sh` (checks the SHA-256, installs to `~/Applications`, registers the hooks, starts the app). `scripts/release.sh --adhoc` builds the release without an Apple Developer account. `uninstall.sh` also deletes `~/Applications/Pitwall.app`.
 - The mascot is a pit engineer: a radio headset everywhere (its mic lights up while waiting), and on the popover stage a telemetry tablet while running, the chequered flag on a pass and its helmet beside it when idle.
 
 ### Security & privacy

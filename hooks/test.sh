@@ -174,4 +174,32 @@ echo '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"'"$HOME"'/.claude
 ./uninstall.sh >/dev/null
 [ "$(jq -c . "$s")" = '{}' ]
 
+# Remote installer (scripts/install-remote.sh): a fake release served from file://
+rel="$HOME/release" pkg="$HOME/pkg/Pitwall-9.9" app="$HOME/Applications/Pitwall.app"
+mkdir -p "$pkg/Pitwall.app/Contents/MacOS" "$pkg/hooks" "$rel" "$HOME/openbin"
+cp /usr/bin/true "$pkg/Pitwall.app/Contents/MacOS/Pitwall"
+printf '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>Pitwall</string><key>CFBundleIdentifier</key><string>test.Pitwall</string></dict></plist>' > "$pkg/Pitwall.app/Contents/Info.plist"
+codesign -f -s - "$pkg/Pitwall.app" 2>/dev/null
+cp monitor-hook.sh permission-hook.sh install.sh uninstall.sh "$pkg/hooks/"
+ditto -c -k --keepParent "$pkg" "$rel/Pitwall-9.9.zip"
+echo "9.9 $(shasum -a 256 "$rel/Pitwall-9.9.zip" | awk '{print $1}')" > "$rel/latest.txt"
+printf '#!/bin/sh\necho "$@" >> "$HOME/opened"\n' > "$HOME/openbin/open" && chmod +x "$HOME/openbin/open" # no real launch
+remote() { PITWALL_BASE_URL="file://$rel" PATH="$HOME/openbin:$PATH" sh ../scripts/install-remote.sh >/dev/null; }
+remote && remote   # second run = update: same result, no duplicate hooks
+[ -x "$app/Contents/MacOS/Pitwall" ]
+[ -z "$(xattr -p com.apple.quarantine "$app" 2>/dev/null)" ]
+[ "$(jq '[.hooks[][]] | length' "$s")" = 8 ]
+[ -x "$HOME/.claude-monitor/monitor-hook.sh" ]
+[ "$(wc -l < "$HOME/opened" | tr -d ' ')" = 2 ]
+# A wrong checksum aborts before anything changes
+touch "$app/marker" && cp "$s" "$HOME/s.before"
+echo "9.9 $(printf '0%.0s' $(seq 64))" > "$rel/latest.txt"
+if remote 2>/dev/null; then echo "installed despite a bad checksum" >&2; exit 1; fi
+[ -e "$app/marker" ]
+cmp -s "$s" "$HOME/s.before"
+# Uninstall deletes the installed app too
+./uninstall.sh >/dev/null
+[ ! -e "$app" ]
+[ "$(jq -c . "$s")" = '{}' ]
+
 echo "all hook tests passed"
