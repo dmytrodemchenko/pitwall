@@ -104,12 +104,20 @@ struct ConfigImpact: Identifiable, Equatable {
     var isMeasured: Bool { before.runs >= Self.minRuns && after.runs >= Self.minRuns }
 
     static func compare(changes: [ConfigChange], runs: [GateRunItem], project: String, pattern: String) -> [ConfigImpact] {
-        let changes = changes.sorted { $0.at < $1.at }
         let failed = runs.map { ($0.end, Verifier.failed(message: $0.lastMessage, verdict: $0.verdict, pattern: pattern) == true) }
         func side(_ from: Date, _ to: Date) -> Side {
             let r = failed.filter { $0.0 >= from && $0.0 < to }
             return Side(runs: r.count, failures: r.filter(\.1).count)
         }
+        var merged: [ConfigChange] = []
+        for c in changes.sorted(by: { $0.at < $1.at }) {
+            if let last = merged.last, side(last.at, c.at).runs == 0 {
+                merged[merged.count - 1] = ConfigChange(at: c.at, files: last.files + c.files.filter { !last.files.contains($0) })
+            } else {
+                merged.append(c)
+            }
+        }
+        let changes = merged
         return changes.indices.map { i in
             ConfigImpact(project: project, change: changes[i],
                          before: side(i > 0 ? changes[i - 1].at : .distantPast, changes[i].at),
