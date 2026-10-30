@@ -2,17 +2,14 @@
 
 Versions come from git tags (`v1.2` → 1.2); the build number is the commit count (`scripts/release.sh`).
 
-## Unreleased
+## 1.5
 
 - Task Replay: a window with every prompt from the last 7 days, rebuilt from the transcripts. Each task shows the prompt and final response, duration, tokens, estimated cost, tool calls, errors and API retries, the files it read, created, edited or deleted, and the subagents it ran, followed by a timeline that can be filtered to tools, files, agents, errors or messages. Open it from the clock button in the popover footer, or from a session card's menu (Replay Tasks).
+- Task Replay, more detail: input, output and cache tokens; each agent's calls, time, tokens and share of the cost; for each file, which agent touched it and when; an Errors and retries section; the prompt, each subagent's finish and the task's end as timeline events. The task list shows tokens. Long timelines show 200 events at a time.
+- Task Replay: an API retry no longer also counts as an error. A transcript line without a timestamp takes the previous line's time (shown with ≈) instead of being dropped.
 - Models: an agent that ran on two models shows the verifier result for each on its own line (it was cut off).
 - Demo mode: two weeks of usage and subagent transcripts, so the summary tiles and Models have data. The demo event log is written oldest first, so its subagent runs are no longer counted twice.
 - README: screenshots of the Analytics tab (demo data).
-
-## Unreleased
-
-- Task Replay, more detail: input, output and cache tokens; each agent's calls, time, tokens and share of the cost; for each file, which agent touched it and when; an Errors and retries section; the prompt, each subagent's finish and the task's end as timeline events. The task list shows tokens. Long timelines show 200 events at a time.
-- Task Replay: an API retry no longer also counts as an error. A transcript line without a timestamp takes the previous line's time (shown with ≈) instead of being dropped.
 
 ## 1.4
 
