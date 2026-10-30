@@ -66,6 +66,58 @@ final class AnalyticsTests: XCTestCase {
         XCTAssertEqual(items.map(\.entry.tokens.input).sorted(), [1, 5, 100])
     }
 
+    /// `--purge` deletes the store but not the app's defaults: an empty store imports the full 30 days again.
+    func testEmptyStoreIgnoresTheLastImportDate() async throws {
+        let root = tempDir(), dir = root.appending(path: "-p-proj"), now = Date()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appending(path: "s1.jsonl")
+        let ts = ISO8601DateFormatter().string(from: now - 3 * 86400)
+        append(#"{"timestamp":"\#(ts)","cwd":"/p/proj","sessionId":"s1","message":{"id":"m1","model":"x","usage":{"input_tokens":3}}}"# + "\n", to: file)
+        try FileManager.default.setAttributes([.modificationDate: now - 3 * 86400], ofItemAtPath: file.path)
+        let defaults = UserDefaults(suiteName: "test-\(UUID())")!
+        defaults.set(now - 60, forKey: AnalyticsStore.importedKey)
+        let store = AnalyticsStore(container: try AnalyticsStore.container(inMemory: true))
+        await store.importTranscripts(root: root, defaults: defaults, now: now)
+        let items = await store.items(since: .distantPast)
+        XCTAssertEqual(items.map(\.entry.tokens.input), [3])
+    }
+
+    /// Runs from before the event log (a first install, or after --purge) come from the subagent transcripts.
+    func testSubagentRunsBeforeTheLogComeFromTranscripts() async throws {
+        let root = tempDir(), now = Date(), iso = ISO8601DateFormatter()
+        let dir = root.appending(path: "-p-proj/s1/subagents")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        func agent(_ id: String, _ type: String, from: Date, minutes: Double, reply: String) {
+            let lines = [#"{"timestamp":"\#(iso.string(from: from))","cwd":"/p/proj","type":"user","message":{"role":"user","content":"go"}}"#,
+                         #"{"timestamp":"\#(iso.string(from: from + minutes * 60))","cwd":"/p/proj","type":"assistant","message":{"content":[{"type":"text","text":"\#(reply)"}]}}"#]
+            append(lines.joined(separator: "\n") + "\n", to: dir.appending(path: "agent-\(id).jsonl"))
+            append(#"{"agentType":"\#(type)","finished":true}"#, to: dir.appending(path: "agent-\(id).meta.json"))
+            try? FileManager.default.setAttributes([.modificationDate: from + minutes * 60], ofItemAtPath: dir.appending(path: "agent-\(id).jsonl").path)
+        }
+        agent("a", "planner", from: now - 3 * 3600, minutes: 4, reply: "plan")
+        agent("b", "verifier", from: now - 2 * 3600, minutes: 2, reply: "broke\\nVERDICT: FAIL")
+        agent("c", "planner", from: now - 600, minutes: 1, reply: "after the log started")
+        let events = root.appending(path: "events.jsonl")
+        append(#"{"timestamp":"\#(iso.string(from: now - 1800))","session_id":"s1","hook_event_name":"SessionStart"}"# + "\n", to: events)
+
+        // As after --purge: the store already has today's usage and the last import was a minute ago.
+        let store = AnalyticsStore(container: try AnalyticsStore.container(inMemory: true))
+        let main = root.appending(path: "-p-proj/s1.jsonl")
+        append(#"{"timestamp":"\#(iso.string(from: now))","cwd":"/p/proj","sessionId":"s1","message":{"id":"m1","model":"x","usage":{"input_tokens":1}}}"# + "\n", to: main)
+        await store.ingest(transcript: main.path)
+        let defaults = UserDefaults(suiteName: "test-\(UUID())")!
+        defaults.set(now - 60, forKey: AnalyticsStore.importedKey)
+        for _ in 0..<2 {
+            await store.importTranscripts(root: root, events: events, defaults: defaults, now: now)
+        }
+        let runs = await store.gateRuns(since: .distantPast).sorted { $0.start < $1.start }
+        XCTAssertEqual(runs.map(\.gate), ["planner", "verifier"])
+        XCTAssertEqual(runs.map(\.duration), [240, 120])
+        XCTAssertEqual(runs.map(\.session), ["s1", "s1"])
+        XCTAssertEqual(runs.map(\.folder), ["/p/proj", "/p/proj"])
+        XCTAssertEqual(Verifier.failed(message: runs[1].lastMessage, verdict: nil, pattern: Verifier.defaultPattern), true)
+    }
+
     func testRetentionDropsRowsOlderThanThirtyDays() async throws {
         let dir = tempDir(), now = Date()
         let ts = ISO8601DateFormatter().string(from: now)
@@ -86,6 +138,20 @@ final class AnalyticsTests: XCTestCase {
         (items, runs) = (await store.items(since: .distantPast), await store.gateRuns(since: .distantPast))
         XCTAssertEqual(items.count, 0)
         XCTAssertEqual(runs.count, 0)
+    }
+
+    /// The header's "today" comes from the transcripts, so it matches the chart even for sessions with no new events.
+    @MainActor
+    func testTodayComesFromTheStore() async throws {
+        let store = AnalyticsStore(container: try AnalyticsStore.container(inMemory: true))
+        let analytics = Analytics(store: store, prices: PriceTable(prices: [:]))
+        let transcript = tempDir().appending(path: "s1.jsonl"), iso = ISO8601DateFormatter()
+        append(#"{"timestamp":"\#(iso.string(from: Date()))","sessionId":"s1","message":{"id":"m1","model":"x","usage":{"input_tokens":7}}}"# + "\n"
+               + #"{"timestamp":"\#(iso.string(from: Date() - 2 * 86400))","sessionId":"s1","message":{"id":"m0","model":"x","usage":{"input_tokens":5}}}"# + "\n",
+               to: transcript)
+        await store.ingest(transcript: transcript.path)
+        await analytics.refreshBudget(alert: false)
+        XCTAssertEqual(analytics.today.map(\.tokens.input), [7])
     }
 
     struct SaveFailed: LocalizedError { var errorDescription: String? { "the disk is full" } }

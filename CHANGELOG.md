@@ -2,6 +2,13 @@
 
 Versions come from git tags (`v1.2` → 1.2); the build number is the commit count (`scripts/release.sh`).
 
+## Unreleased
+
+- The header's "today" comes from the transcripts, like the Analytics chart, so the two always agree; it no longer shows $0.00 when no session has sent an event yet.
+- After `uninstall.sh --purge` and a new install, Analytics imports the full 30 days again (it imported only today).
+- Pipeline: subagent runs from before the event log started (a first install, or after `--purge`) are read from the subagent transcripts (`subagents/agent-*.jsonl` + `.meta.json`), so the 7 days are complete.
+- The Analytics store files are owner-only (600), like the rest of the app's data.
+
 ## 1.2.1
 
 - Config changes: saves with no verifier run in between count as one change, so a burst of `CLAUDE.md` edits is one row.
