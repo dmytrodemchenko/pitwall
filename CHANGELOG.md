@@ -2,7 +2,11 @@
 
 Versions come from git tags (`v1.2` → 1.2); the build number is the commit count (`scripts/release.sh`).
 
-## Unreleased
+## 1.2.1
+
+- Config changes: saves with no verifier run in between count as one change, so a burst of `CLAUDE.md` edits is one row.
+
+## 1.2
 
 - Renamed to **Pitwall** (was Claude Monitor; bundle id `com.demchenko.Pitwall`). Data stays in `~/.claude-monitor`. Delete the old `ClaudeMonitor.app`; set up Settings, Notifications, Automation and Start at login again.
 - The accent and the mascot are Claude Code orange (`#D97757` / `#E08466` in dark mode); running sessions are green.
