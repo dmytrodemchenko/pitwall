@@ -337,7 +337,7 @@ actor AnalyticsStore {
     }
 
     func costReport(prices: PriceTable, now: Date = Date()) -> CostReport {
-        CostReport(items: items(since: CostReport.days(ending: now).first!), prices: prices, now: now)
+        CostReport(items: items(since: CostReport.weekBefore(now)), prices: prices, now: now)
     }
 
     func budget(prices: PriceTable, now: Date = Date()) -> BudgetStatus {
@@ -360,8 +360,8 @@ actor AnalyticsStore {
 
     func reports(prices: PriceTable, pattern: String, now: Date = Date()) -> (CostReport, CacheReport, PipelineReport) {
         let from = CostReport.days(ending: now).first!
-        let week = items(since: from)
-        return (CostReport(items: week, prices: prices, now: now), CacheReport(entries: week.map(\.entry), now: now),
+        let twoWeeks = items(since: CostReport.weekBefore(now))
+        return (CostReport(items: twoWeeks, prices: prices, now: now), CacheReport(entries: twoWeeks.map(\.entry), now: now),
                 PipelineReport(runs: gateRuns(since: from), pattern: pattern, now: now))
     }
 }
@@ -434,8 +434,14 @@ struct CostReport {
     let series: [String]
     let bars: [Bar]
     let projects: [ProjectTotal]
+    let previous: Double?
 
     var total: Double { projects.reduce(0) { $0 + $1.cost } }
+    var change: Double? { previous.flatMap { $0 > 0 ? (total - $0) / $0 : nil } }
+
+    static func weekBefore(_ now: Date, calendar: Calendar = .current) -> Date {
+        calendar.date(byAdding: .day, value: -7, to: days(ending: now, calendar: calendar)[0])!
+    }
 
     static func days(ending now: Date, calendar: Calendar = .current) -> [Date] {
         let today = calendar.startOfDay(for: now)
@@ -447,6 +453,8 @@ struct CostReport {
         self.days = days
         let week = items.filter { $0.entry.timestamp >= days[0] && $0.entry.timestamp <= now }
         let cost = { (i: UsageItem) in prices.price(for: i.entry.model)?.cost(i.entry.tokens) ?? 0 }
+        let before = items.filter { $0.entry.timestamp >= Self.weekBefore(now, calendar: calendar) && $0.entry.timestamp < days[0] }
+        previous = before.isEmpty ? nil : before.reduce(0) { $0 + cost($1) }
 
         projects = Dictionary(grouping: week, by: \.project)
             .map { ProjectTotal(project: $0, cost: $1.reduce(0) { $0 + cost($1) }, tokens: $1.map(\.entry).tokens.total) }
