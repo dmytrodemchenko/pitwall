@@ -70,6 +70,7 @@ enum Demo {
         defaults.removePersistentDomain(forName: "pitwall-demo")
         await store.importTranscripts(root: root.appending(path: "projects"), events: events, defaults: defaults, now: now)
         await store.ingestEvents(url: events)
+        try? replay(in: root.appending(path: "projects"), now: now)
         await analytics.reload()
         analytics.budget = await store.budget(prices: prices)
     }
@@ -128,6 +129,108 @@ enum Demo {
         let url = root.appending(path: "events.jsonl")
         try log.write(to: url, atomically: true, encoding: .utf8)
         return url
+    }
+
+    static func replay(in projects: URL, now: Date) throws {
+        let storefront = Transcript(start: now - 40 * 60, cwd: "/Users/demo/storefront")
+        let t = storefront, f = "/Users/demo/storefront/src/checkout/"
+        try t.write([
+            t.user(0, "Also update the changelog"),
+            t.call(4, "u1", "Read", ["file_path": "/Users/demo/storefront/CHANGELOG.md"]), t.result(5, "u1", "## Unreleased"),
+            t.user(40, "[Request interrupted by user]"),
+            t.user(900, "The checkout total is wrong when a coupon and free shipping are combined. Find the bug, fix it, and add a test."),
+            t.say(904, "a", "I'll look at how the total is computed first."),
+            t.call(906, "t1", "Grep", ["pattern": "applyCoupon"]), t.result(907, "t1", "src/checkout/total.ts\nsrc/checkout/coupon.ts"),
+            t.call(909, "t2", "Read", ["file_path": f + "total.ts"]), t.result(910, "t2", "export function total(cart) { … }"),
+            t.call(912, "t3", "Read", ["file_path": f + "coupon.ts"]), t.result(913, "t3", "export function applyCoupon(…) { … }"),
+            t.line(920, ["type": "system", "subtype": "api_error", "retryAttempt": 1, "maxRetries": 10, "error": ["message": "Overloaded"]]),
+            t.call(941, "t4", "Edit", ["file_path": f + "total.ts"]), t.result(942, "t4", "String to replace not found in file.", error: true),
+            t.call(948, "t5", "Edit", ["file_path": f + "total.ts"], output: 2400), t.result(949, "t5", "The file has been updated."),
+            t.call(955, "t6", "Write", ["file_path": f + "total.test.ts"], output: 3100), t.result(956, "t6", "File created successfully."),
+            t.call(960, "t7", "Bash", ["command": "npm test -- checkout"]), t.result(984, "t7", "Tests: 1 failed, 41 passed", error: true),
+            t.call(990, "t8", "Edit", ["file_path": f + "total.ts"]), t.result(991, "t8", "The file has been updated."),
+            t.call(994, "t9", "Agent", ["subagent_type": "verifier", "description": "Verify the checkout fix"]),
+            t.result(1071, "t9", "VERDICT: PASS"),
+            t.call(1075, "t10", "Bash", ["command": "rm src/checkout/total.old.ts"]), t.result(1076, "t10", ""),
+            t.say(1080, "z", "Fixed. The coupon discount was applied after free shipping zeroed the shipping line, so the discount was taken twice. `total()` now applies coupons to the subtotal only, and `total.test.ts` covers the combined case. The verifier passed."),
+        ], to: projects.appending(path: "-Users-demo-storefront/checkout.jsonl"), subagents: [
+            ("verifier", "t9", [
+                t.call(997, "v1", "Read", ["file_path": f + "total.ts"], output: 300), t.result(998, "v1", "…"),
+                t.call(1001, "v2", "Bash", ["command": "npm test"], output: 300), t.result(1050, "v2", "Tests: 42 passed"),
+                t.say(1068, "v3", "All 42 tests pass and the combined case is covered.\nVERDICT: PASS"),
+            ]),
+        ])
+
+        let p = Transcript(start: now - 22 * 60, cwd: "/Users/demo/payments-api"), r = "/Users/demo/payments-api/refunds/"
+        var developer = [p.call(8, "d1", "Read", ["file_path": r + "partial.py"], model: "claude-sonnet-5-5"), p.result(9, "d1", "…")]
+        for i in 0..<5 {
+            let at = 30 + Double(i) * 70
+            developer += [p.call(at, "d\(i + 2)", "Bash", ["command": "pytest -q tests/refunds"], output: 1800, model: "claude-sonnet-5-5"),
+                          p.result(at + 25, "d\(i + 2)", "FAILED tests/refunds/test_partial.py::test_rounds_half_even - assert 10.01 == 10.00",
+                                   error: true)]
+        }
+        developer += [
+            p.call(400, "d8", "Edit", ["file_path": r + "partial.py"], output: 2200, model: "claude-sonnet-5-5"),
+            p.result(401, "d8", "The file has been updated."),
+            p.call(410, "d9", "Bash", ["command": "pytest -q tests/refunds"], model: "claude-sonnet-5-5"), p.result(436, "d9", "18 passed"),
+            p.say(440, "d10", "Partial refunds now round half to even, per line before summing. 18 tests pass.", model: "claude-sonnet-5-5"),
+        ]
+        try p.write([
+            p.user(0, "Partial refunds are off by a cent on some orders. Find the rounding bug and fix it."),
+            p.call(4, "p1", "Agent", ["subagent_type": "developer", "description": "Fix refund rounding"]),
+            p.result(442, "p1", "Partial refunds now round half to even."),
+            p.say(450, "p2", "Fixed: refunds rounded each line half-up and then summed, so two halves could add a cent. They now round half to even per line. The developer agent retried the same failing test five times before changing the code."),
+        ], to: projects.appending(path: "-Users-demo-payments-api/refunds.jsonl"), subagents: [("developer", "p1", developer)])
+    }
+
+    private struct Transcript {
+        let start: Date
+        let cwd: String
+        private let iso = ISO8601DateFormatter()
+
+        init(start: Date, cwd: String) {
+            self.start = start
+            self.cwd = cwd
+        }
+
+        func line(_ s: Double, _ fields: [String: Any]) -> String {
+            var d = fields
+            d["timestamp"] = iso.string(from: start + s)
+            d["cwd"] = cwd
+            d["uuid"] = UUID().uuidString
+            return String(decoding: (try? JSONSerialization.data(withJSONObject: d)) ?? Data(), as: UTF8.self)
+        }
+
+        func user(_ s: Double, _ text: String) -> String { line(s, ["type": "user", "message": ["role": "user", "content": text]]) }
+
+        func call(_ s: Double, _ id: String, _ name: String, _ input: [String: Any], output: Int = 900,
+                  model: String = "claude-opus-5-5") -> String {
+            line(s, ["type": "assistant", "message": ["id": "m-\(id)", "model": model, "stop_reason": "tool_use",
+                     "content": [["type": "tool_use", "id": id, "name": name, "input": input]],
+                     "usage": ["input_tokens": 40, "output_tokens": output, "cache_read_input_tokens": 60_000]]])
+        }
+
+        func say(_ s: Double, _ id: String, _ text: String, model: String = "claude-opus-5-5") -> String {
+            line(s, ["type": "assistant", "message": ["id": "m-\(id)", "model": model, "stop_reason": "end_turn",
+                     "content": [["type": "text", "text": text]],
+                     "usage": ["input_tokens": 20, "output_tokens": 400, "cache_read_input_tokens": 60_000]]])
+        }
+
+        func result(_ s: Double, _ id: String, _ text: String, error: Bool = false) -> String {
+            line(s, ["type": "user", "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": id, "content": text,
+                                                                                "is_error": error]]]])
+        }
+
+        func write(_ lines: [String], to url: URL, subagents: [(agent: String, toolUse: String, lines: [String])]) throws {
+            let dir = url.deletingPathExtension().appending(path: "subagents")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+            for (agent, toolUse, lines) in subagents {
+                try lines.joined(separator: "\n").write(to: dir.appending(path: "agent-\(agent).jsonl"), atomically: true, encoding: .utf8)
+                try #"{"agentType":"\#(agent)","toolUseId":"\#(toolUse)"}"#
+                    .write(to: dir.appending(path: "agent-\(agent).meta.json"), atomically: true, encoding: .utf8)
+            }
+        }
     }
 
     private static func subagent(session: String, gate: String, model: String, from: Date, to: Date, in root: URL,

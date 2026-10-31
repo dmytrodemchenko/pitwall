@@ -8,11 +8,12 @@ import XCTest
 /// Records a demo video (1080×1350 MP4, for social posts) of the real popover playing a scripted story on
 /// made-up sessions and a made-up week of analytics: no real data is read.
 /// Opt-in: TEST_RUNNER_DEMO_DIR=/some/dir xcodebuild ... test -only-testing:PitwallTests/DemoVideoTests
-/// It opens a popover on screen for about 30 s and clicks its tabs: leave that corner of the screen alone.
+/// It opens a popover and windows on screen for about 50 s and clicks its tabs: leave the screen alone meanwhile.
+/// Notifications are drawn as banners with the app's own text (Loop.message, CacheExpiry.message, a parsed permission request).
 @MainActor
 final class DemoVideoTests: XCTestCase {
     private let dir: URL! = ProcessInfo.processInfo.environment["DEMO_DIR"].map { URL(fileURLWithPath: $0) }
-    private static let duration = 38.0, fps = 30
+    private static let duration = 49.0, fps = 30
     private static let canvas = CGSize(width: 1080, height: 1350), menuBar: CGFloat = 46
 
     override func setUpWithError() throws {
@@ -26,13 +27,22 @@ final class DemoVideoTests: XCTestCase {
         let points: [String: CGPoint]
     }
 
-    /// What was on screen at one moment: the popover, the Stop alert and the Settings window, when shown.
+    /// What was on screen at one moment: the popover, Settings and Task Replay, when shown.
     private struct Frame {
         let t: Double
-        let popover: Shot?, alert: Shot?, settings: Shot?
+        let popover: Shot?, settings: Shot?, replay: Shot?
         let mark: MarkState
         let markSince: Double
     }
+
+    /// A notification as macOS shows it, drawn into the video between two times; its buttons can be pointed at.
+    private struct Banner {
+        let from, to: Double
+        let title, body: String
+        let buttons: [String]
+    }
+
+    private var banners: [Banner] = []
 
     /// Hover in the popover follows the drawn pointer: SwiftUI's onHover ignores synthetic mouse events.
     @Observable @MainActor final class Pointer {
@@ -70,7 +80,7 @@ final class DemoVideoTests: XCTestCase {
         Demo.sessions(sessions, usage, git, now: now)
         var pid = HookEvent(timestamp: now, sessionId: "s1", cwd: "/Users/demo/storefront", hookEventName: "PreToolUse", transcriptPath: nil,
                             toolName: "Bash", toolDetail: "npm test -- cart", subagentType: nil, verdict: nil, todos: nil)
-        pid.pid = 48213 // a plausible pid for the alert; the video never stops anything
+        pid.pid = 48213 // a plausible pid, so the card's Stop button shows; the video never stops anything
         sessions.apply(pid)
         let defaults = UserDefaults(suiteName: "demo-\(UUID())")!
         defaults.set(BillingMode.api.rawValue, forKey: BudgetSettings.modeKey)
@@ -103,18 +113,8 @@ final class DemoVideoTests: XCTestCase {
         anchor.orderFrontRegardless()
         defer { popover.close(); anchor.close(); backdrop.close(); _ = resizer }
 
-        // The Stop confirmation as the app builds it (shown, never run modally: nothing is stopped), and Settings.
-        var alert: NSAlert?
-        func showAlert() {
-            guard let session = sessions.sessions["s1"] else { return }
-            let a = SessionActions.stopAlert(session)
-            a.window.appearance = NSAppearance(named: .darkAqua)
-            a.layout()
-            a.window.setFrameOrigin(CGPoint(x: screen.minX + 40, y: screen.midY - 100))
-            a.window.orderFrontRegardless()
-            alert = a
-        }
-        let settings = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(hotKey: HotKey()).defaultAppStorage(defaults)))
+        // Settings, with its Back button.
+        let settings = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(hotKey: HotKey(), back: {}).defaultAppStorage(defaults)))
         settings.title = "Pitwall Settings"
         settings.styleMask = [.titled, .closable]
         settings.isReleasedWhenClosed = false
@@ -122,7 +122,38 @@ final class DemoVideoTests: XCTestCase {
         let fitting = settings.contentViewController!.view.fittingSize
         settings.setContentSize(CGSize(width: fitting.width, height: min(fitting.height, 460)))
         settings.setFrameTopLeftPoint(CGPoint(x: screen.minX + 40, y: screen.maxY - 40))
-        defer { settings.close(); alert?.window.close() }
+        defer { settings.close() }
+
+        // Task Replay: the demo transcripts, the payments-api task whose developer agent retried the same failing test.
+        try Demo.replay(in: root.appending(path: "projects"), now: now)
+        let history = TaskHistory(root: root.appending(path: "projects"))
+        await history.reload()
+        let refunds = try XCTUnwrap(history.tasks.first { $0.project == "payments-api" })
+        let replay = NSWindow(contentViewController: NSHostingController(rootView: TaskDetail(task: refunds, prices: prices)
+            .frame(width: 700, height: 640)))
+        replay.title = "Task Replay"
+        replay.styleMask = [.titled, .closable]
+        replay.isReleasedWhenClosed = false
+        replay.appearance = NSAppearance(named: .darkAqua)
+        replay.setFrameTopLeftPoint(CGPoint(x: screen.minX + 40, y: screen.maxY - 40))
+        defer { replay.close() }
+        func scrollReplay(to y: CGFloat) {
+            func find(_ v: NSView) -> NSScrollView? { (v as? NSScrollView) ?? v.subviews.lazy.compactMap(find).first }
+            guard let scroll = replay.contentView.flatMap(find) else { return }
+            scroll.contentView.scroll(to: CGPoint(x: 0, y: y))
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
+
+        // Notifications, with the text the app would post.
+        let request = try XCTUnwrap(PermissionRequest.parse(Data(#"{"session_id":"s1","tool_name":"Bash","cwd":"/Users/demo/storefront","tool_input":{"command":"rm -rf dist && npm run build"}}"#.utf8)))
+        let loop = Loop(session: "s2", kind: .repeats(ToolAction.describe(tool: "Bash", detail: "pytest -q tests/refunds", subagent: "developer")),
+                        agent: "developer", count: 5, since: now - 6 * 60)
+        banners = [
+            Banner(from: 5.2, to: 8.3, title: "storefront: allow \(request.toolName)?", body: request.summary, buttons: ["Deny", "Allow"]),
+            Banner(from: 12.9, to: 15.9, title: "Pitwall", body: loop.message(project: "payments-api", cost: 1.84, now: now), buttons: ["Stop…"]),
+            Banner(from: 35.8, to: 39.2, title: "Pitwall",
+                   body: CacheExpiry.message(project: "mobile-app", left: 100, extra: 0.96, estimate: false), buttons: []),
+        ]
 
         // The story, in seconds from the start of the video.
         let s = sessions
@@ -132,28 +163,35 @@ final class DemoVideoTests: XCTestCase {
                               transcriptPath: nil, toolName: tool, toolDetail: detail, subagentType: agent, verdict: verdict,
                               todos: todos))
         }
-        var clicks: [(Double, MenuView.Tab)] = [(14.8, .analytics), (20.8, .sessions)]
+        func showPopover() {
+            state.openedAt = Date()
+            popover.show(relativeTo: anchor.contentView!.bounds, of: anchor.contentView!, preferredEdge: .minY)
+        }
+        var clicks: [(Double, MenuView.Tab)] = [(20.8, .analytics), (26.4, .sessions)]
         var script: [(Double, () -> Void)] = [
-            (0.5, { state.openedAt = Date(); popover.show(relativeTo: anchor.contentView!.bounds, of: anchor.contentView!, preferredEdge: .minY) }),
-            (4.0, { ev("Notification", "s2") }),
-            (7.0, { ev("PreToolUse", "s2", tool: "Bash", detail: "pytest -q tests/refunds") }),
-            (8.5, { ev("PreToolUse", "s1", tool: "Edit", detail: "src/cart/CheckoutSummary.tsx") }),
-            (10.0, { ev("SubagentStop", "s2", agent: "verifier", verdict: "fail") }),
-            (12.5, { ev("PreToolUse", "s2", tool: "Agent", agent: "developer") }),
-            (13.3, { ev("PostToolUse", "s1", tool: "TodoWrite", todos: Demo.todos(done: 4)) }),
-            (22.0, { ev("SubagentStop", "s2", agent: "developer") }),
-            (22.2, { ev("PreToolUse", "s2", tool: "Agent", agent: "verifier") }),
-            (22.9, { ev("Stop", "s1") }),
-            (24.7, { pointer.hover = "s1/resume" }),
-            (25.7, { pointer.hover = "s1/stop" }),
-            (26.3, { showAlert() }),
-            (27.7, { alert?.window.orderOut(nil); alert = nil; pointer.hover = nil }),
-            (29.0, { pointer.hover = "gearshape" }),
-            (29.3, { settings.orderFrontRegardless() }),
-            (29.5, { popover.performClose(nil); pointer.hover = nil }),
-            (34.0, { settings.orderOut(nil) }),
-            (23.6, { ev("SubagentStop", "s2", agent: "verifier", verdict: "pass") }),
+            (0.5, { showPopover() }),
+            (4.6, { ev("Notification", "s1") }),
+            (8.2, { ev("PreToolUse", "s1", tool: "Bash", detail: "rm -rf dist && npm run build") }),
+            (9.4, { ev("PreToolUse", "s1", tool: "Edit", detail: "src/cart/CheckoutSummary.tsx") }),
+            (16.6, { ev("SubagentStop", "s2", agent: "verifier", verdict: "fail") }),
+            (18.6, { ev("PreToolUse", "s2", tool: "Agent", agent: "developer") }),
+            (19.2, { ev("PostToolUse", "s1", tool: "TodoWrite", todos: Demo.todos(done: 4)) }),
+            (27.4, { popover.performClose(nil) }),
+            (27.6, { replay.orderFrontRegardless() }),
+            (35.0, { replay.orderOut(nil) }),
+            (35.2, { showPopover() }),
+            (36.4, { ev("SubagentStop", "s2", agent: "developer") }),
+            (36.6, { ev("PreToolUse", "s2", tool: "Agent", agent: "verifier") }),
+            (38.0, { ev("SubagentStop", "s2", agent: "verifier", verdict: "pass") }),
+            (38.6, { ev("Stop", "s1") }),
+            (39.6, { pointer.hover = "gearshape" }),
+            (39.9, { settings.orderFrontRegardless() }),
+            (40.1, { popover.performClose(nil); pointer.hover = nil }),
+            (43.3, { settings.orderOut(nil); showPopover() }),
         ]
+        for i in 0..<5 { script.append((10.2 + Double(i) * 0.5, { ev("PreToolUse", "s2", tool: "Bash", detail: "pytest -q tests/refunds", agent: "developer") })) }
+        for i in 0...24 { script.append((31.0 + Double(i) * 0.05, { scrollReplay(to: CGFloat(i) / 24 * 560) })) }
+        script.sort { $0.0 < $1.0 }
 
         // Capture: as fast as the window server gives frames; PNGs are written off the main thread.
         let framesDir = dir.appending(path: "frames")
@@ -188,16 +226,15 @@ final class DemoVideoTests: XCTestCase {
                 let w = view.convert(p, to: nil)
                 return CGPoint(x: w.x, y: (view.window?.frame.height ?? 0) - w.y)
             }
-            func center(_ view: NSView) -> CGPoint { top(view, CGPoint(x: view.bounds.midX, y: view.bounds.midY)) }
             var named = spots.frames
             for (tab, frame) in state.tabFrames { named["tab.\(tab)"] = frame }
             let popoverShot = popover.isShown ? hosting.view.window.flatMap { window in
                 shoot(window, "popover", points: named.mapValues { top(hosting.view, CGPoint(x: $0.midX, y: $0.midY)) })
             } : nil
-            let alertShot = alert.flatMap { a in shoot(a.window, "alert", points: a.buttons.count > 1 ? ["cancel": center(a.buttons[1])] : [:]) }
-            let settingsShot = shoot(settings, "settings",
-                                     points: settings.standardWindowButton(.closeButton).map { ["close": center($0)] } ?? [:])
-            frames.append(Frame(t: t, popover: popoverShot, alert: alertShot, settings: settingsShot, mark: mark, markSince: markSince))
+            let settingsShot = shoot(settings, "settings", points: ["back": CGPoint(x: 46, y: settings.frame.height - settings.contentLayoutRect.height + 24)])
+            let replayShot = shoot(replay, "replay", points: [:])
+            frames.append(Frame(t: t, popover: popoverShot, settings: settingsShot, replay: replayShot,
+                                mark: mark, markSince: markSince))
             try await Task.sleep(for: .milliseconds(12))
         }
         await withCheckedContinuation { done in writes.notify(queue: .main) { done.resume() } }
@@ -225,14 +262,15 @@ final class DemoVideoTests: XCTestCase {
     /// What the caption says when: chapter, title, subtitle.
     private static let captions: [(Double, String, String, String)] = [
         (0, "Sessions", "Every Claude Code session", "status, gate and cost at a glance"),
-        (4, "Attention", "Know when Claude needs you", "waiting sessions turn yellow"),
-        (9.6, "Verification", "Catch a failing verifier", "before it reaches review"),
-        (13.8, "Analytics", "Cost, cache and pipeline", "a week of usage, per project"),
-        (21.2, "Pipeline", "Ship when every gate is green", "architect → planner → developer → verifier"),
-        (24.2, "Actions", "Resume or stop from the card", "Stop asks first, and only signals Claude Code"),
-        (28.0, "Settings", "Tuned to your workflow", "budget, thresholds, verifier pattern, shortcut"),
+        (4.4, "Permissions", "Allow or deny from anywhere", "the request, right in the notification"),
+        (9.9, "Loop alerts", "Catch an agent stuck in a loop", "what it has burned so far, and a Stop button"),
+        (16.2, "Verification", "See a failing verifier", "before it reaches review"),
+        (20.3, "Analytics", "Cost, cache and models", "and what a cheaper model would save"),
+        (27.2, "Task Replay", "Replay any task, step by step", "cost per agent, files, errors and retries"),
+        (35.5, "Cache", "Know before the cache expires", "and what the next message would cost"),
+        (39.4, "Settings", "Tuned to your workflow", "budget, thresholds, verifier pattern, shortcut"),
     ]
-    private static let endCard = 34.4
+    private static let endCard = 45.0
 
     private func encode(_ frames: [Frame], to url: URL) async throws {
         try? FileManager.default.removeItem(at: url)
@@ -270,7 +308,7 @@ final class DemoVideoTests: XCTestCase {
                 }
                 return cache[url]
             }
-            let windows = (popover: image(frame.popover), alert: image(frame.alert), settings: image(frame.settings))
+            let windows = (popover: image(frame.popover), settings: image(frame.settings), replay: image(frame.replay))
             while !input.isReadyForMoreMediaData { try await Task.sleep(for: .milliseconds(5)) }
             guard let pool = adaptor.pixelBufferPool else { return XCTFail("no pixel buffer pool: \(String(describing: writer.error))") }
             var buffer: CVPixelBuffer?
@@ -298,15 +336,15 @@ final class DemoVideoTests: XCTestCase {
     }
 
     /// One video frame, drawn top-left origin: backdrop, fake menu bar with the live mark, the popover, cursor, captions.
-    private func draw(_ cg: CGContext, t: Double, frame: Frame, windows: (popover: NSImage?, alert: NSImage?, settings: NSImage?),
+    private func draw(_ cg: CGContext, t: Double, frame: Frame, windows: (popover: NSImage?, settings: NSImage?, replay: NSImage?),
                       scale: CGFloat, desk: Desktop, shownAt: Double, known: inout [String: CGPoint]) {
         let popover = windows.popover
         let size = Self.canvas
         let accent = NSColor(resource: .accent), ending = smooth((t - Self.endCard) / 0.8)
         // The camera: holds on the top, pans down through Analytics and back, then down to the footer for Settings.
         let footer = CGPoint(x: 0, y: max(0, (known["popover/gearshape"]?.y ?? 0) - (size.height - 470)))
-        let camera = path([(0, CGPoint.zero), (15.9, .zero), (17.3, CGPoint(x: 0, y: 440)), (19.0, CGPoint(x: 0, y: 440)),
-                           (20.3, .zero), (28.0, .zero), (28.9, footer), (29.4, footer), (30.2, .zero)], t).y
+        let camera = path([(0, CGPoint.zero), (22.0, .zero), (23.4, CGPoint(x: 0, y: 440)), (25.0, CGPoint(x: 0, y: 440)),
+                           (26.0, .zero), (38.8, .zero), (39.5, footer), (40.0, footer), (40.8, .zero)], t).y
         cg.saveGState()
         cg.translateBy(x: 0, y: -camera)
         // The desktop: the wallpaper, and a menu bar that blurs it, with the status items of a real Mac.
@@ -335,7 +373,8 @@ final class DemoVideoTests: XCTestCase {
         }
         let mark = CGPoint(x: size.width / 2, y: 24)
         // A captured window on the canvas at the video's scale; its named points are remembered in canvas pixels.
-        func place(_ image: NSImage?, _ shot: Shot?, _ name: String, at origin: (CGSize) -> CGPoint, fraction: CGFloat = 1) {
+        func place(_ image: NSImage?, _ shot: Shot?, _ name: String, at origin: (CGSize) -> CGPoint, fraction: CGFloat = 1,
+                   scale: CGFloat = scale) {
             guard let image, let shot else { return }
             let w = image.size.width * scale, h = image.size.height * scale
             let rect = CGRect(origin: origin(CGSize(width: w, height: h)), size: CGSize(width: w, height: h))
@@ -346,26 +385,25 @@ final class DemoVideoTests: XCTestCase {
             let k = w / shot.size.width
             for (key, p) in shot.points { known["\(name)/\(key)"] = CGPoint(x: rect.minX + p.x * k, y: rect.minY + p.y * k) }
         }
-        // The popover hangs from the menu bar; the alert and Settings open where macOS puts them.
+        // The popover hangs from the menu bar; Settings and Task Replay open where macOS puts them.
         place(popover, frame.popover, "popover", at: { CGPoint(x: (size.width - $0.width) / 2, y: Self.menuBar + 4) },
               fraction: smooth((t - shownAt) / 0.2) * (1 - 0.75 * ending))
         place(windows.settings, frame.settings, "settings", at: { CGPoint(x: (size.width - $0.width) / 2, y: Self.menuBar + 60) })
-        place(windows.alert, frame.alert, "alert", at: { CGPoint(x: (size.width - $0.width) / 2, y: 300) })
+        place(windows.replay, frame.replay, "replay", at: { CGPoint(x: (size.width - $0.width) / 2, y: Self.menuBar + 24) }, scale: 0.75)
+        for banner in banners { drawBanner(banner, t: t, known: &known) }
         // The pointer: rests beside the popover between actions, never on its content, and fades out.
         func at(_ key: String) -> CGPoint { known[key] ?? rest }
         let rest = CGPoint(x: size.width / 2 + 390, y: 270)
-        let settings = known["settings/close"].map { CGPoint(x: $0.x + 520, y: $0.y + 330) } ?? rest
+        let settings = known["settings/back"].map { CGPoint(x: $0.x + 560, y: $0.y + 330) } ?? rest
         let keys: [(Double, CGPoint)] = [
             (0, CGPoint(x: 760, y: 420)), (0.38, mark), (1.0, mark), (2.0, rest),
-            (13.6, rest), (14.6, at("popover/tab.analytics")), (15.1, at("popover/tab.analytics")), (15.8, rest),
-            (19.9, rest), (20.6, at("popover/tab.sessions")), (21.1, at("popover/tab.sessions")), (21.8, rest),
-            (23.9, rest), (24.6, at("popover/s1/resume")), (25.3, at("popover/s1/resume")),
-            (25.7, at("popover/s1/stop")), (26.4, at("popover/s1/stop")),
-            (27.1, at("alert/cancel")), (27.75, at("alert/cancel")),
-            (28.9, at("popover/gearshape")), (29.5, at("popover/gearshape")),
-            (30.6, settings), (32.4, settings), (33.4, at("settings/close")), (34.05, at("settings/close")), (34.6, rest),
+            (6.6, rest), (7.5, at("banner/Allow")), (8.25, at("banner/Allow")), (9.0, rest),
+            (19.7, rest), (20.6, at("popover/tab.analytics")), (21.1, at("popover/tab.analytics")), (21.8, rest),
+            (25.6, rest), (26.2, at("popover/tab.sessions")), (26.7, at("popover/tab.sessions")), (27.3, rest),
+            (38.8, rest), (39.5, at("popover/gearshape")), (40.1, at("popover/gearshape")),
+            (41.2, settings), (42.2, settings), (42.8, at("settings/back")), (43.35, at("settings/back")), (44.2, rest),
         ]
-        let alpha = ending > 0 ? 0 : max(fade(t, 0, 2.0), fade(t, 13.4, 15.8), fade(t, 19.7, 21.8), fade(t, 23.7, 34.6))
+        let alpha = ending > 0 ? 0 : max(fade(t, 0, 2.0), fade(t, 6.4, 9.0), fade(t, 19.5, 21.8), fade(t, 25.4, 27.3), fade(t, 38.6, 44.2))
         drawPointer(at: path(keys, t), alpha: alpha)
         cg.restoreGState()
         // Lower third: chapter, title, subtitle, cross-fading; chapter pills; then the end card.
@@ -400,10 +438,53 @@ final class DemoVideoTests: XCTestCase {
             Mark.draw(cg, in: hero, state: MarkState(mode: .running), t: t - Self.endCard, template: false)
             centered("Pitwall", size: 96, weight: .heavy, color: .white, alpha: ending, y: 560 + rise)
             centered("A menu bar companion for Claude Code", size: 38, weight: .medium, color: accent, alpha: ending, y: 650 + rise)
-            centered("Sessions  ·  Pipeline gates  ·  Cost  ·  Allow/Deny from notifications", size: 28, weight: .regular,
+            centered("Sessions  ·  Loop alerts  ·  Task Replay  ·  Cost per agent", size: 28, weight: .regular,
                      color: NSColor.white.withAlphaComponent(0.7), alpha: smooth((t - Self.endCard - 0.5) / 0.6), y: 730 + rise)
+            centered("Allow/Deny from notifications  ·  Pipeline gates  ·  Analytics", size: 28, weight: .regular,
+                     color: NSColor.white.withAlphaComponent(0.7), alpha: smooth((t - Self.endCard - 0.7) / 0.6), y: 780 + rise)
             centered("macOS  ·  Swift  ·  100% local, no network", size: 28, weight: .regular,
-                     color: NSColor.white.withAlphaComponent(0.7), alpha: smooth((t - Self.endCard - 0.9) / 0.6), y: 780 + rise)
+                     color: NSColor.white.withAlphaComponent(0.7), alpha: smooth((t - Self.endCard - 0.9) / 0.6), y: 830 + rise)
+        }
+    }
+
+    /// A macOS notification banner at the top right: slides in, holds, fades; its buttons' centers go into `known`.
+    private func drawBanner(_ b: Banner, t: Double, known: inout [String: CGPoint]) {
+        let a = fade(t, b.from, b.to)
+        guard a > 0 else { return }
+        let width: CGFloat = 660, x = Self.canvas.width - width - 24 + 60 * (1 - smooth((t - b.from) / 0.35))
+        let text = NSFont.systemFont(ofSize: 23), lines = b.body.split(separator: "\n").count
+        let height: CGFloat = 92 + CGFloat(max(1, lines)) * 30 + (b.buttons.isEmpty ? 0 : 62)
+        let rect = CGRect(x: x, y: Self.menuBar + 18, width: width, height: height)
+        NSGraphicsContext.current?.cgContext.saveGState()
+        NSGraphicsContext.current?.cgContext.setShadow(offset: CGSize(width: 0, height: -10), blur: 40,
+                                                       color: NSColor.black.withAlphaComponent(0.5 * a).cgColor)
+        NSColor(white: 0.17, alpha: 0.96 * a).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 30, yRadius: 30).fill()
+        NSGraphicsContext.current?.cgContext.restoreGState()
+        NSColor.white.withAlphaComponent(0.12 * a).setStroke()
+        NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 30, yRadius: 30).stroke()
+        NSApp.applicationIconImage.draw(in: CGRect(x: rect.minX + 22, y: rect.minY + 24, width: 64, height: 64), from: .zero,
+                                        operation: .sourceOver, fraction: a, respectFlipped: true, hints: nil)
+        let left = rect.minX + 104
+        NSAttributedString(string: b.title, attributes: [.font: NSFont.systemFont(ofSize: 25, weight: .bold),
+                                                         .foregroundColor: NSColor.white.withAlphaComponent(a)])
+            .draw(at: CGPoint(x: left, y: rect.minY + 22))
+        NSAttributedString(string: "now", attributes: [.font: text, .foregroundColor: NSColor.white.withAlphaComponent(0.5 * a)])
+            .draw(at: CGPoint(x: rect.maxX - 70, y: rect.minY + 24))
+        NSAttributedString(string: b.body, attributes: [.font: text, .foregroundColor: NSColor.white.withAlphaComponent(0.85 * a),
+                                                        .paragraphStyle: { let p = NSMutableParagraphStyle(); p.minimumLineHeight = 30; return p }()])
+            .draw(in: CGRect(x: left, y: rect.minY + 58, width: width - 104 - 24, height: CGFloat(max(1, lines)) * 30 + 6))
+        var right = rect.maxX - 22
+        for title in b.buttons.reversed() {
+            let label = NSAttributedString(string: title, attributes: [.font: NSFont.systemFont(ofSize: 22, weight: .semibold),
+                                                                      .foregroundColor: NSColor.white.withAlphaComponent(a)])
+            let w = max(120, label.size().width + 44)
+            let button = CGRect(x: right - w, y: rect.maxY - 22 - 46, width: w, height: 46)
+            NSColor.white.withAlphaComponent(0.16 * a).setFill()
+            NSBezierPath(roundedRect: button, xRadius: 12, yRadius: 12).fill()
+            label.draw(at: CGPoint(x: button.midX - label.size().width / 2, y: button.midY - label.size().height / 2))
+            known["banner/\(title)"] = CGPoint(x: button.midX, y: button.midY)
+            right = button.minX - 12
         }
     }
 
