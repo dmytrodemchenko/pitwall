@@ -16,10 +16,7 @@
 </p>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/cards-dark.png">
-    <img src="docs/images/cards-light.png" width="360" alt="Session cards in the Pitwall popover">
-  </picture>
+  <img src="docs/images/demo.gif" width="480" alt="Pitwall in action: session cards, Allow from a notification, a loop alert with its cost, a failing verifier">
 </p>
 
 - **Loop alerts with a price tag.** When an agent repeats the same call, edits the same file again and again,
@@ -107,6 +104,13 @@ Claude Code ──hooks────────▶ ~/.claude-monitor/events.json
   If the app is not running or does not answer, Claude Code shows its normal prompt in the terminal.
 
 ## Using Pitwall
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/cards-dark.png">
+    <img src="docs/images/cards-light.png" width="360" alt="Session cards in the Pitwall popover">
+  </picture>
+</p>
 
 ### The menu bar icon
 
