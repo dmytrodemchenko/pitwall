@@ -10,8 +10,9 @@ func event(_ name: String, session: String = "s1", tool: String? = nil, agent: S
               toolName: tool, subagentType: agent, verdict: verdict)
 }
 
+/// Stamped now: Monitor only loads today's backlog, so a fixed date breaks the day after.
 func jsonLine(_ name: String, session: String = "s1") -> String {
-    #"{"timestamp":"2026-10-30T08:00:00Z","session_id":"\#(session)","cwd":"/p","hook_event_name":"\#(name)","transcript_path":null,"tool_name":null,"subagent_type":null,"verdict":null}"# + "\n"
+    #"{"timestamp":"\#(ISO8601DateFormatter().string(from: Date()))","session_id":"\#(session)","cwd":"/p","hook_event_name":"\#(name)","transcript_path":null,"tool_name":null,"subagent_type":null,"verdict":null}"# + "\n"
 }
 
 func tempDir() -> URL {
