@@ -2,7 +2,7 @@
 
 Versions come from git tags (`v1.2` → 1.2); the build number is the commit count (`scripts/release.sh`).
 
-## Unreleased
+## 1.6.1
 
 - Session cards redesigned: elapsed time, tokens and cost as labeled figures; a callout for what the session is doing now, or "Waiting for you" when it needs you; branch and changes under the project name; status-tinted cards with a pulsing dot while running; Tasks and Context bars aligned.
 - A pipeline with one agent that hasn't run yet is no longer shown; one agent that ran shows as a single line.
