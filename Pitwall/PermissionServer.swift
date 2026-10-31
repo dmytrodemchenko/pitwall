@@ -21,15 +21,18 @@ struct PermissionRequest: Equatable {
 
     static func summarize(_ input: [String: Any]) -> (text: String, isComplete: Bool) {
         let keys = ["command", "file_path", "notebook_path", "path", "url", "pattern", "query", "description", "prompt"]
-        let text = keys.lazy.compactMap { input[$0] as? String }.first
-            ?? input.keys.sorted().lazy.compactMap { input[$0] as? String }.first ?? ""
+        let shown = keys.first { input[$0] is String } ?? input.keys.sorted().first { input[$0] is String }
+        let text = shown.flatMap { input[$0] as? String } ?? ""
+        let hidden = input.contains { key, value in
+            key != shown && key != "description" && (value is String || value is [Any] || value is [String: Any])
+        }
         let lines = text.split(whereSeparator: \.isNewline)
         var line = lines.first.map(String.init) ?? ""
         let cut = line.count > 120
         if cut { line = line.prefix(119) + "…, \(text.count) characters" }
         let more = lines.count - 1
         if more > 0 { line += " (+\(more) more line\(more == 1 ? "" : "s"))" }
-        return (line, !cut && more == 0)
+        return (line, !cut && more == 0 && !hidden)
     }
 }
 

@@ -53,6 +53,20 @@ final class PermissionTests: XCTestCase {
         XCTAssertEqual(Notifier.category(for: request(s)), Notifier.permissionCategory)
     }
 
+    /// Allow only when the notification shows every argument: an edit's new text or a second query field could hide anything.
+    func testHiddenArgumentsOfferDenyOnly() {
+        for input: [String: Any] in [["file_path": "/a/b.swift", "old_string": "x", "new_string": "y"],
+                                     ["file_path": "/a/b.swift", "content": "rm -rf ~"],
+                                     ["query": "list users", "sql": "DROP TABLE users"],
+                                     ["command": "ls", "env": ["A": "1"]]] {
+            XCTAssertFalse(PermissionRequest.summarize(input).isComplete, "\(input)")
+        }
+        // Flags and numbers, and Claude's own description of a command, don't change what runs.
+        XCTAssertTrue(PermissionRequest.summarize(["command": "ls", "description": "List files", "timeout": 5000,
+                                                   "run_in_background": false]).isComplete)
+        XCTAssertTrue(PermissionRequest.summarize(["file_path": "/a/b.swift", "offset": 10, "limit": 50]).isComplete)
+    }
+
     func testCategories() throws {
         let categories = Dictionary(uniqueKeysWithValues: Notifier.categories.map { ($0.identifier, $0) })
         let full = try XCTUnwrap(categories[Notifier.permissionCategory])

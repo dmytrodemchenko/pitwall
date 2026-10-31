@@ -260,7 +260,7 @@ actor AnalyticsStore {
         ingest((all.filter { $0.1 >= since } + untagged).map(\.0), oldest: oldest)
         defaults.set(true, forKey: Self.agentsKey)
         let logStart = firstEvent(in: events) ?? .distantFuture
-        if empty || defaults.object(forKey: Self.backfilledKey) as? Date != logStart {
+        if empty || defaults.object(forKey: Self.backfilledKey) == nil {
             for (url, modified) in all where modified >= oldest && url.path.contains("/subagents/") {
                 guard let run = GateRunItem.subagent(transcript: url), run.end < logStart, run.end >= oldest else { continue }
                 context.insert(GateRunRow(run))

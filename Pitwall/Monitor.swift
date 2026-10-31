@@ -48,7 +48,7 @@ final class Monitor {
         var touched = Set<String>()
         let events = reader.readNew()
         if live, !events.isEmpty { onEvents() }
-        for e in events {
+        for e in events.map(store.resolve) {
             store.apply(e)
             touched.insert(e.sessionId)
             let verifierFailed = e.hookEventName == "SubagentStop" && e.subagentType == "verifier"

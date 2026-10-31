@@ -78,6 +78,20 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertTrue(PipelineTrack.visible(try XCTUnwrap(store.sessions["s2"])))
     }
 
+    /// A foreground verifier may end with an untyped SubagentStop (agent_type ""): it still counts as the verifier's.
+    func testUntypedStopEndsTheAgentWaitingForIt() throws {
+        let line = #"{"timestamp":"2026-10-30T08:00:00Z","session_id":"s1","hook_event_name":"SubagentStop","subagent_type":"","verdict":"fail","last_message":"VERDICT: FAIL"}"#
+        let untyped = try XCTUnwrap(HookEvent.parse(Data(line.utf8)))
+        XCTAssertNil(untyped.subagentType)
+        store.apply(event("PreToolUse", tool: "Agent", agent: "verifier"))
+        XCTAssertEqual(store.resolve(untyped).subagentType, "verifier")
+        XCTAssertEqual(Monitor.alert(for: store.resolve(untyped), project: "p"), "p: verifier failed")
+        store.apply(untyped)
+        XCTAssertEqual(s1?.status, .failed)
+        // Once its stop came, a later untyped stop isn't the verifier's again.
+        XCTAssertNil(store.resolve(untyped).subagentType)
+    }
+
     func testVerifierFailureIsStickyUntilPass() {
         store.apply(event("SubagentStop", agent: "verifier", verdict: "fail"))
         XCTAssertEqual(s1?.status, .failed)

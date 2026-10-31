@@ -2,6 +2,12 @@
 
 Versions come from git tags (`v1.2` → 1.2); the build number is the commit count (`scripts/release.sh`).
 
+## Unreleased
+
+- A verifier that ends without naming itself (Claude Code sends an empty agent type for some foreground agents) now still turns the card red, sends the "verifier failed" alert and counts in Analytics.
+- Permission notifications offer Allow only when they show every argument. An edit's new text, a file's content or a second query field isn't shown, so those requests now get Deny only, and the terminal shows the rest.
+- Analytics no longer counts subagent runs twice after the event log is trimmed.
+
 ## 1.6.1
 
 - Session cards redesigned: elapsed time, tokens and cost as labeled figures; a callout for what the session is doing now, or "Waiting for you" when it needs you; branch and changes under the project name; status-tinted cards with a pulsing dot while running; Tasks and Context bars aligned.
