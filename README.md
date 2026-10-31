@@ -13,7 +13,6 @@
   <a href="https://github.com/dmytrodemchenko/pitwall/releases/latest"><img src="https://img.shields.io/github/v/release/dmytrodemchenko/pitwall" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/macOS-14%2B-lightgrey.svg" alt="macOS 14 or later">
-  <img src="https://img.shields.io/badge/dependencies-none-brightgreen.svg" alt="No dependencies">
 </p>
 
 <p align="center">
@@ -23,14 +22,12 @@
   </picture>
 </p>
 
-> [!NOTE]
-> Pitwall is an independent project, not made, endorsed or supported by Anthropic.
-> Claude and Claude Code are trademarks of Anthropic, PBC.
-
-With three or four Claude Code sessions in different terminal tabs, it is hard to tell which one is waiting for
-you, which one is stuck, and what the afternoon has cost. Pitwall answers that from the menu bar. It reads
-Claude Code's hook events and transcripts on your Mac, shows every session as a card, and notifies you when a
-session needs input, loops, or is about to get more expensive.
+- **Loop alerts with a price tag.** When an agent repeats the same call, edits the same file again and again,
+  or keeps failing the verifier, you get a notification with what the loop has cost so far and a Stop button.
+- **Approve from the notification.** Permission requests arrive as notifications with Allow and Deny, so you
+  don't have to find the right terminal tab. Nothing is allowed without your click.
+- **Did that prompt change help?** For every edit to an agent prompt or `CLAUDE.md`, Pitwall shows the verifier
+  failure rate before and after.
 
 ## Install
 
@@ -41,6 +38,15 @@ curl -fsSL https://github.com/dmytrodemchenko/pitwall/releases/latest/download/i
 Requires macOS 14 or later, Claude Code, and `jq` (included in macOS 15 and later). The script installs
 `Pitwall.app` into `~/Applications`, registers the Claude Code hooks and starts the app. Run it again to update.
 See [Installation](#installation) for building from source and uninstalling.
+
+> [!NOTE]
+> Pitwall is an independent project, not made, endorsed or supported by Anthropic.
+> Claude and Claude Code are trademarks of Anthropic, PBC.
+
+With three or four Claude Code sessions in different terminal tabs, it is hard to tell which one is waiting for
+you, which one is stuck, and what the afternoon has cost. Pitwall answers that from the menu bar. It reads
+Claude Code's hook events and transcripts on your Mac, shows every session as a card, and notifies you when a
+session needs input, loops, or is about to get more expensive.
 
 ## Features
 
@@ -68,7 +74,8 @@ See [Installation](#installation) for building from source and uninstalling.
 - A timeline of what happened, filtered to tools, files, agents, errors or messages.
 
 **Privacy**
-- No network access, no telemetry, no account. No third-party dependencies.
+- No network access, no telemetry, no account. The app has no third-party dependencies; the hooks use `jq`,
+  which macOS 15 and later include.
 
 ## Contents
 
