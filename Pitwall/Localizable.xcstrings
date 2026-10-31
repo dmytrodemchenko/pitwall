@@ -39,22 +39,12 @@
     "%@ sessions" : {
 
     },
-    "%@ tok · %@" : {
+    "%@/%@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ tok · %2$@"
-          }
-        }
-      }
-    },
-    "%@/%@ tasks" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@/%2$@ tasks"
+            "value" : "%1$@/%2$@"
           }
         }
       }
@@ -154,9 +144,6 @@
     "One session" : {
 
     },
-    "Pitwall" : {
-
-    },
     "Prompts from the last %@ days show up here." : {
 
     },
@@ -170,6 +157,9 @@
 
     },
     "Subscription" : {
+
+    },
+    "Tasks" : {
 
     },
     "Terminal" : {
@@ -191,6 +181,9 @@
 
     },
     "Waiting for approval in System Settings → General → Login Items." : {
+
+    },
+    "Waiting for you" : {
 
     },
     "z" : {
