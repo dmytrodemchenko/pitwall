@@ -157,7 +157,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func showSettings() {
         popover.performClose(nil)
         if settingsWindow == nil {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(hotKey: hotKey)))
+            let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(hotKey: hotKey) { [weak self] in
+                self?.settingsWindow?.close()
+                self?.toggle()
+            }))
             window.title = "Pitwall Settings"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false

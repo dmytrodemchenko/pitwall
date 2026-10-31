@@ -188,7 +188,7 @@ private struct Metrics: View {
                 Tile(title: "Tool calls", value: "\(task.calls)", detail: slowest.map { "slowest \(GateRun.format($0))" } ?? "none")
                 Tile(title: "Errors", value: "\(task.errors)",
                      detail: task.retries == 1 ? "1 API retry" : "\(task.retries) API retries",
-                     tint: task.errors + task.retries > 0 ? Color(.failure) : .secondary)
+                     tint: task.retries > 0 ? Color(.failure) : .secondary)
                 Tile(title: "Files changed", value: "\(task.files.filter(\.changed).count)", detail: "\(task.files.count) touched")
                 Tile(title: "Subagents", value: "\(subagents.count)",
                      detail: subagents.isEmpty ? "none" : cost.map { $0 > 0 ? "\(Int((subagentCost / $0 * 100).rounded()))% of cost" : "no cost" } ?? "cost unknown")

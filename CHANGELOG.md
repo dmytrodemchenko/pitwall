@@ -2,6 +2,12 @@
 
 Versions come from git tags (`v1.2` → 1.2); the build number is the commit count (`scripts/release.sh`).
 
+## Unreleased
+
+- Settings: a Back button (⌘[) closes Settings and opens the menu again.
+- Demo mode: Task Replay has sample tasks (a checkout fix with a verifier, and a refund fix where the developer agent retries the same failing test five times).
+- Task Replay: the API retries line is red only when there were retries.
+
 ## 1.5
 
 - Task Replay: a window with every prompt from the last 7 days, rebuilt from the transcripts. Each task shows the prompt and final response, duration, tokens, estimated cost, tool calls, errors and API retries, the files it read, created, edited or deleted, and the subagents it ran, followed by a timeline that can be filtered to tools, files, agents, errors or messages. Open it from the clock button in the popover footer, or from a session card's menu (Replay Tasks).
