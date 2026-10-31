@@ -2,7 +2,7 @@
 
 Versions come from git tags (`v1.2` → 1.2); the build number is the commit count (`scripts/release.sh`).
 
-## Unreleased
+## 1.6
 
 - Settings: a Back button (⌘[) closes Settings and opens the menu again.
 - Demo mode: Task Replay has sample tasks (a checkout fix with a verifier, and a refund fix where the developer agent retries the same failing test five times).
