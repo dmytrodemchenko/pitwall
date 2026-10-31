@@ -190,9 +190,10 @@ final class SnapshotTests: XCTestCase {
     @MainActor
     func testRenderSettings() throws {
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
-            let view = NSHostingView(rootView: SettingsView(hotKey: HotKey()).frame(width: 480, height: 1100))
+            let view = NSHostingView(rootView: SettingsView(hotKey: HotKey(), back: {}).frame(width: 480, height: 1250)
+                .background(Color(nsColor: .windowBackgroundColor)))
             view.appearance = NSAppearance(named: appearance)
-            view.frame = CGRect(x: 0, y: 0, width: 480, height: 1100)
+            view.frame = CGRect(x: 0, y: 0, width: 480, height: 1250)
             view.layoutSubtreeIfNeeded()
             let rep = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
             view.cacheDisplay(in: view.bounds, to: rep)

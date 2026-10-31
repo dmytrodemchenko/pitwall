@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
     let hotKey: HotKey
+    var back: (() -> Void)?
     @AppStorage(SessionActions.ideCommandKey) private var ideCommand = SessionActions.defaultIDECommand
     @AppStorage(SessionActions.terminalKey) private var terminal = SessionActions().terminalForNewTabs
     @AppStorage(ContextLevel.warnKey) private var contextWarn = ContextLevel.defaultWarn
@@ -16,6 +17,22 @@ struct SettingsView: View {
     @AppStorage(GateRun.limitKey) private var gateLimit = GateRun.defaultLimitMinutes
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let back {
+                Button(action: back) { Label("Back", systemImage: "chevron.left") }
+                    .buttonStyle(.borderless)
+                    .keyboardShortcut("[", modifiers: .command)
+                    .help("Back to the menu (⌘[)")
+                    .padding(.horizontal, 20)
+                    .padding(.top, 14)
+            }
+            form
+        }
+        .frame(width: 440)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var form: some View {
         Form {
             Section {
                 LoginItemToggle()
@@ -89,8 +106,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 440)
-        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
