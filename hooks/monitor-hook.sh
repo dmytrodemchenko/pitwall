@@ -33,7 +33,9 @@ case "$pid" in ""|*[!0-9]*) pid=null ;; esac # --argjson needs a number or null,
 
 line=$(printf '%s' "$input" | "$jq" -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --argjson pid "$pid" --arg tty "$tty" --arg app "$app" '
-  (.tool_input.subagent_type? // .agent_type // null) as $agent |
+  (.tool_input.subagent_type? // (.agent_type | select(. != "")) // null) as $agent |
+  # An untyped SubagentStop (agent_type "") may be the verifier: the app knows which agent it was.
+  (.hook_event_name == "SubagentStop" and ($agent == "verifier" or $agent == null)) as $report |
   {
     timestamp: $ts,
     session_id, cwd, hook_event_name, transcript_path,
@@ -46,12 +48,12 @@ line=$(printf '%s' "$input" | "$jq" -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     subagent_type: $agent,
     # SubagentStop fires when the subagent really finishes (Agent PostToolUse may fire early for background agents).
     verdict: (
-      if .hook_event_name == "SubagentStop" and $agent == "verifier"
+      if $report
       then (if (.last_assistant_message // "" | tostring | [splits("\n") | select(test("\\S"))] | last // ""
              | ascii_downcase | contains("verdict: fail")) then "fail" else "pass" end)
       else null end),
     # The verifier report ending (the app matches its own failure pattern from Settings against it).
-    last_message: (if .hook_event_name == "SubagentStop" and $agent == "verifier"
+    last_message: (if $report
       then (.last_assistant_message // "" | tostring | .[-2000:]) else null end),
     # Task list, after the call succeeded: TodoWrite sends the whole list; TaskCreate/TaskUpdate one task.
     todos: (if .hook_event_name == "PostToolUse" and .tool_name == "TodoWrite" and (.tool_input.todos | type) == "array"

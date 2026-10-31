@@ -21,6 +21,7 @@ struct Session: Identifiable, Equatable {
     var agents: [String] = []
     var defined: [String] = []
     var gateRuns: [String: GateRun] = [:]
+    var stopDue: String?
     var action: ToolAction?
     var actionRunning = false
     var todos: [Todo] = []
@@ -62,7 +63,15 @@ final class SessionStore {
         activeSessions.max { $0.status < $1.status }
     }
 
+    func resolve(_ e: HookEvent) -> HookEvent {
+        guard e.hookEventName == "SubagentStop", e.subagentType == nil, let agent = sessions[e.sessionId]?.stopDue else { return e }
+        var e = e
+        e.subagentType = agent
+        return e
+    }
+
     func apply(_ e: HookEvent) {
+        let e = resolve(e)
         var s = sessions[e.sessionId] ?? Session(id: e.sessionId, project: Self.projectName(e.cwd), folder: e.cwd,
                                                  startedAt: e.timestamp, lastEventAt: e.timestamp, defined: definedAgents(e.cwd))
         s.lastEventAt = max(s.lastEventAt, e.timestamp)
@@ -82,6 +91,7 @@ final class SessionStore {
             s.actionRunning = false
         case "SubagentStop":
             s.activity = .running
+            s.stopDue = nil
             if let agent = e.subagentType ?? s.gate, s.gateRuns[agent]?.end == nil {
                 s.gateRuns[agent]?.end = e.timestamp
             }
@@ -98,6 +108,7 @@ final class SessionStore {
                     s.verifierPassed = false
                 }
                 s.gate = agent
+                s.stopDue = agent
             }
             if let agent = GateRun.handingBack(e) { s.gateRuns[agent]?.end = e.timestamp }
         case "Notification":

@@ -122,6 +122,9 @@ final class AnalyticsTests: XCTestCase {
         for _ in 0..<2 {
             await store.importTranscripts(root: root, events: events, defaults: defaults, now: now)
         }
+        // Rotation trims the log so it starts later: runs from before the new start already came from the log, not again.
+        try Data((#"{"timestamp":"\#(iso.string(from: now - 60))","session_id":"s1","hook_event_name":"Stop"}"# + "\n").utf8).write(to: events)
+        await store.importTranscripts(root: root, events: events, defaults: defaults, now: now)
         let runs = await store.gateRuns(since: .distantPast).sorted { $0.start < $1.start }
         XCTAssertEqual(runs.map(\.gate), ["planner", "verifier"])
         XCTAssertEqual(runs.map(\.duration), [240, 120])

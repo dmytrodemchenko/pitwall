@@ -34,6 +34,11 @@ hook '{"session_id":"s1","hook_event_name":"SubagentStop","agent_type":"verifier
 hook '{"session_id":"s1","hook_event_name":"SubagentStop","agent_type":"developer","last_assistant_message":"VERDICT: FAIL"}'
 [ "$(last .verdict)" = null ]
 [ "$(last .last_message)" = null ]
+# An untyped stop (agent_type "") may be the verifier's: no type, but the report goes along for the app to judge
+hook '{"session_id":"s1","hook_event_name":"SubagentStop","agent_type":"","last_assistant_message":"VERDICT: FAIL"}'
+[ "$(last .subagent_type)" = null ]
+[ "$(last .verdict)" = fail ]
+[ "$(last .last_message)" = "VERDICT: FAIL" ]
 long=$(printf 'x%.0s' $(seq 1 2500))
 hook "{\"session_id\":\"s1\",\"hook_event_name\":\"SubagentStop\",\"agent_type\":\"verifier\",\"last_assistant_message\":\"${long}END\"}"
 [ "$(last '.last_message | length')" = 2000 ]

@@ -8,7 +8,7 @@ struct HookEvent: Decodable, Equatable {
     let transcriptPath: String?
     let toolName: String?
     var toolDetail: String? = nil
-    let subagentType: String?
+    var subagentType: String?
     let verdict: String?
     var lastMessage: String? = nil
     var pid: Int32? = nil
@@ -25,6 +25,8 @@ struct HookEvent: Decodable, Equatable {
     }()
 
     static func parse(_ line: Data) -> HookEvent? {
-        try? decoder.decode(HookEvent.self, from: line)
+        guard var e = try? decoder.decode(HookEvent.self, from: line) else { return nil }
+        if e.subagentType == "" { e.subagentType = nil }
+        return e
     }
 }
