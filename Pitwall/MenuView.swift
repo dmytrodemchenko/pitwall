@@ -264,10 +264,7 @@ private struct Header: View {
         let tokens = entries.tokens.total
         let subscription = mode == .subscription
         HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Pitwall").font(.headline)
-                SessionCount(sessions: store.activeSessions)
-            }
+            SessionCount(sessions: store.activeSessions)
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 Text(UsageText.cost(cost, estimate: subscription))
@@ -348,21 +345,31 @@ private struct SessionCount: View {
     let sessions: [Session]
 
     var body: some View {
-        let status = sessions.map(\.status).max() ?? .idle
-        HStack(spacing: 5) {
-            Circle().fill(Color(nsColor: status.color)).frame(width: 6, height: 6)
-            if sessions.isEmpty {
-                Text("No active sessions")
-            } else {
-                Text("\(sessions.count) sessions").contentTransition(.numericText(value: Double(sessions.count)))
+        let counts = Dictionary(grouping: sessions, by: \.status).mapValues(\.count)
+        let present = [SessionStatus.failed, .waiting, .running, .idle].filter { counts[$0] != nil }
+        VStack(alignment: .leading, spacing: 3) {
+            Text("\(sessions.count) sessions")
+                .font(.headline)
+                .contentTransition(.numericText(value: Double(sessions.count)))
+            HStack(spacing: 9) {
+                ForEach(present, id: \.self) { status in
+                    HStack(spacing: 4) {
+                        Circle().fill(Color(nsColor: status.color)).frame(width: 6, height: 6)
+                        Text(present.count == 1 ? "\(counts[status] ?? 0) \(status.label.lowercased())" : "\(counts[status] ?? 0)")
+                            .monospacedDigit()
+                    }
+                    .help(status.label)
+                }
             }
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
         .lineLimit(1)
         .animation(.snappy, value: sessions.count)
-        .animation(.snappy, value: status)
-        .help(sessions.isEmpty ? "" : "Most urgent: \(status.label)")
+        .animation(.snappy, value: present)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(sessions.isEmpty ? "No active sessions"
+                            : present.map { "\(counts[$0] ?? 0) \($0.label)" }.joined(separator: ", "))
     }
 }
 
@@ -399,67 +406,17 @@ struct SessionCard: View {
     var body: some View {
         let tint = Color(nsColor: session.status.color)
         let active = session.status == .running || session.status == .waiting
-        let recent = active ? CacheRatio.recent(entries, now: Date()) : nil
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(session.project).font(.system(.body, weight: .semibold)).lineLimit(1)
-                Spacer()
-                HStack(spacing: 2) {
-                    CardButton(id: session.id + "/resume", icon: "arrow.uturn.backward", help: "Resume in a new tab") { actions?.resume(session) }
-                    if session.pid != nil {
-                        CardButton(id: session.id + "/stop", icon: "stop.fill", help: "Stop this session (asks first)") { actions?.stop(session) }
-                    }
-                }
-                .opacity(hover ? 1 : 0)
-                .allowsHitTesting(hover)
-                .accessibilityHidden(true)
-                StatusBadge(status: session.status)
-            }
-            HStack(spacing: 6) {
-                Image(systemName: "clock").imageScale(.small)
-                Text(session.startedAt, style: .timer).monospacedDigit()
-                Spacer(minLength: 8)
-                if let recent, recent * 100 < cacheWarn {
-                    Label("Cache \(Int((recent * 100).rounded()))%", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(Color(.waiting))
-                        .help("Cache hit ratio below \(Int(cacheWarn))% for the last 10 minutes: most input is being re-sent "
-                              + "instead of read from the cache, which costs more. Threshold in Settings.")
-                        .accessibilityLabel("Warning: cache hit ratio \(Int(recent * 100)) percent")
-                        .transition(.opacity)
-                }
-                Text("\(UsageText.tokens(entries.tokens.total)) tok · \(UsageText.cost(prices.cost(of: entries), estimate: mode == .subscription))")
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                    .animation(.snappy, value: entries.count)
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            if let action = session.action {
-                ActionLine(action: action, running: session.actionRunning)
-            }
-            if !PipelineTrack.agents(session).isEmpty {
-                PipelineTrack(session: session, live: live)
-            }
-            if !session.todos.isEmpty {
-                TodoRow(todos: session.todos)
-            }
-            if let context {
-                ContextRow(context: context, window: contextWindows.window(for: context.model))
-            }
-            if let git {
-                GitRow(git: git, folder: session.folder)
-            }
-            if let error = actions?.errors[session.id] {
-                ActionErrorRow(message: error) { actions?.errors[session.id] = nil }
-            }
-        }
+        let lowCache = (active ? CacheRatio.recent(entries, now: Date()) : nil).flatMap { $0 * 100 < cacheWarn ? $0 : nil }
+        let emphasis = session.status == .waiting || session.status == .failed
+        let wash = LinearGradient(colors: [tint.opacity(emphasis ? 0.16 : 0.07), Color.clear], startPoint: .top, endPoint: .center)
+        content(lowCache: lowCache)
         .padding(12)
+        .background(wash, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .background(.primary.opacity(hover ? 0.08 : 0.045), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onHover { hovering = $0 }
         .onTapGesture { actions?.openTerminal(session) }
-        .help((CacheRatio.of(entries).map { "Cache hit ratio: \(Int(($0 * 100).rounded()))%\n" } ?? "")
-              + "Click to bring this session's terminal to the front")
+        .help(tooltip)
         .contextMenu { menu }
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "Open in Terminal") { actions?.openTerminal(session) }
@@ -470,6 +427,78 @@ struct SessionCard: View {
             .strokeBorder(tint.opacity(session.status == .running || session.status == .idle ? 0.12 : 0.45)))
         .animation(.card, value: session.status)
     }
+
+    private var tooltip: String {
+        (CacheRatio.of(entries).map { "Cache hit ratio: \(Int(($0 * 100).rounded()))%\n" } ?? "")
+            + "Click to bring this session's terminal to the front"
+    }
+
+    private func content(lowCache: Double?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header
+            if session.action != nil || session.status == .waiting {
+                ActionLine(action: session.action, running: session.actionRunning, waiting: session.status == .waiting)
+            }
+            if PipelineTrack.visible(session) {
+                PipelineTrack(session: session, live: live)
+            }
+            stats
+            if let lowCache {
+                cacheWarning(lowCache)
+            }
+            if !session.todos.isEmpty {
+                TodoRow(todos: session.todos)
+            }
+            if let context {
+                ContextRow(context: context, window: contextWindows.window(for: context.model))
+            }
+            if let error = actions?.errors[session.id] {
+                ActionErrorRow(message: error) { actions?.errors[session.id] = nil }
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 6) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(session.project).font(.system(.body, weight: .semibold)).lineLimit(1)
+                if let git {
+                    GitRow(git: git, folder: session.folder)
+                }
+            }
+            Spacer(minLength: 4)
+            HStack(spacing: 2) {
+                CardButton(id: session.id + "/resume", icon: "arrow.uturn.backward", help: "Resume in a new tab") { actions?.resume(session) }
+                if session.pid != nil {
+                    CardButton(id: session.id + "/stop", icon: "stop.fill", help: "Stop this session (asks first)") { actions?.stop(session) }
+                }
+            }
+            .opacity(hover ? 1 : 0)
+            .allowsHitTesting(hover)
+            .accessibilityHidden(true)
+            StatusBadge(status: session.status, pulse: live && session.status == .running)
+        }
+    }
+
+    private var stats: some View {
+        HStack(spacing: 0) {
+            Stat(label: "Elapsed") { Text(session.startedAt, style: .timer) }
+            Stat(label: "Tokens") { Text(UsageText.tokens(entries.tokens.total)) }
+            Stat(label: "Cost") { Text(UsageText.cost(prices.cost(of: entries), estimate: mode == .subscription)) }
+                .help("The whole session, including earlier days")
+        }
+        .animation(.snappy, value: entries.count)
+    }
+
+    private func cacheWarning(_ recent: Double) -> some View {
+        Label("Cache hit ratio \(Int((recent * 100).rounded()))% in the last 10 min", systemImage: "exclamationmark.triangle.fill")
+            .font(.caption)
+            .foregroundStyle(Color(.waiting))
+            .help("Cache hit ratio below \(Int(cacheWarn))% for the last 10 minutes: most input is being re-sent "
+                  + "instead of read from the cache, which costs more. Threshold in Settings.")
+            .accessibilityLabel("Warning: cache hit ratio \(Int(recent * 100)) percent")
+            .transition(.opacity)
+    }
 }
 
 private struct TodoRow: View {
@@ -478,12 +507,13 @@ private struct TodoRow: View {
     var body: some View {
         let done = todos.completed, total = todos.count
         HStack(spacing: 8) {
-            Image(systemName: "checklist").imageScale(.small)
-            Text("\(done)/\(total) tasks")
+            Image(systemName: "checklist").imageScale(.small).frame(width: 14)
+            Text("Tasks").frame(width: 50, alignment: .leading)
+            ThinBar(fraction: Double(done) / Double(max(total, 1)), color: Color(.accent))
+            Text("\(done)/\(total)")
                 .monospacedDigit()
                 .contentTransition(.numericText(value: Double(done)))
-                .fixedSize()
-            ThinBar(fraction: Double(done) / Double(max(total, 1)), color: Color(.accent))
+                .frame(minWidth: 30, alignment: .trailing)
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -516,8 +546,8 @@ private struct ContextRow: View {
         case .critical: Color(.failure)
         }
         HStack(spacing: 8) {
-            Image(systemName: "brain").imageScale(.small)
-            Text("Context").fixedSize()
+            Image(systemName: "brain").imageScale(.small).frame(width: 14)
+            Text("Context").frame(width: 50, alignment: .leading)
             ThinBar(fraction: percent / 100, color: color)
             Text(percent / 100, format: .percent.precision(.fractionLength(0)))
                 .monospacedDigit()
@@ -539,7 +569,7 @@ private struct GitRow: View {
     let folder: String?
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 5) {
             Image(systemName: "arrow.triangle.branch").imageScale(.small)
             Text(git.branch).lineLimit(1).truncationMode(.middle)
             Text("·")
@@ -574,28 +604,60 @@ struct ThinBar: View {
 }
 
 private struct ActionLine: View {
-    let action: ToolAction
+    let action: ToolAction?
     let running: Bool
+    let waiting: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: running ? "bolt.fill" : "checkmark")
+        let tint = waiting ? Color(.waiting) : Color(.accent)
+        let now = running && !waiting
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: waiting ? "hand.raised.fill" : now ? "bolt.fill" : "checkmark")
                 .imageScale(.small)
-                .foregroundStyle(running ? Color(.accent) : .secondary)
+                .foregroundStyle(waiting || now ? tint : .secondary)
+                .frame(width: 14)
                 .contentTransition(.symbolEffect(.replace))
-            Text(action.text)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .foregroundStyle(running ? .primary : .secondary)
-                .contentTransition(.opacity)
+            if waiting {
+                Text("Waiting for you").fontWeight(.semibold).foregroundStyle(tint).fixedSize()
+            }
+            if let action {
+                Text(now ? action.text : waiting ? "· \(action.text)" : "Last: \(action.text)")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(now ? .primary : .secondary)
+                    .contentTransition(.opacity)
+            }
         }
         .font(.caption)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .help(action.full)
+        .background(waiting || now ? tint.opacity(0.12) : .primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .help(action?.full ?? "")
         .animation(.snappy, value: action)
         .animation(.snappy, value: running)
+        .animation(.snappy, value: waiting)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel((running ? "Now: " : "Last: ") + action.full)
+        .accessibilityLabel([waiting ? "Waiting for you" : nil, action.map { (now ? "Now: " : "Last: ") + $0.full }]
+            .compactMap { $0 }.joined(separator: ". "))
+    }
+}
+
+private struct Stat<Value: View>: View {
+    let label: LocalizedStringKey
+    @ViewBuilder let value: Value
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(label).font(.caption2).foregroundStyle(.secondary)
+            value
+                .font(.system(.callout, design: .rounded).weight(.semibold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .contentTransition(.numericText())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -622,11 +684,14 @@ private struct ActionErrorRow: View {
 
 struct StatusBadge: View {
     let status: SessionStatus
+    var pulse = false
 
     var body: some View {
         let tint = Color(nsColor: status.color)
         HStack(spacing: 5) {
-            Circle().fill(tint).frame(width: 6, height: 6)
+            Image(systemName: "circle.fill")
+                .font(.system(size: 6))
+                .symbolEffect(.pulse, options: .repeating, isActive: pulse)
             Text(status.label).font(.caption.weight(.semibold))
         }
         .foregroundStyle(tint)
@@ -652,6 +717,11 @@ struct PipelineTrack: View {
         return Array((ran + session.defined.filter { !ran.contains($0) }).prefix(5))
     }
 
+    nonisolated static func visible(_ session: Session) -> Bool {
+        let agents = agents(session)
+        return agents.count > 1 || agents.contains { session.gateRuns[$0] != nil }
+    }
+
     private var agents: [String] { Self.agents(session) }
     private var current: Int? { session.gate.flatMap(agents.firstIndex(of:)) }
     private var reached: Int? { agents.lastIndex { session.gateRuns[$0] != nil } }
@@ -663,6 +733,49 @@ struct PipelineTrack: View {
     }
 
     var body: some View {
+        if agents.count == 1, let gate = agents.first {
+            solo(gate)
+        } else {
+            track
+        }
+    }
+
+    private func solo(_ gate: String) -> some View {
+        let s = state(gate)
+        return HStack(spacing: 8) {
+            icon(s).frame(width: 14, height: 14)
+            Text(gate).fontWeight(s == .failed ? .semibold : .regular)
+                .foregroundStyle(s == .failed ? Color(.failure) : .secondary)
+                .lineLimit(1)
+            Text(Self.describe(s)).foregroundStyle(s == .failed ? Color(.failure) : .secondary)
+            Spacer(minLength: 4)
+            if let run = session.gateRuns[gate] {
+                GateTime(run: run, live: live)
+            }
+        }
+        .font(.caption)
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func icon(_ s: NodeState) -> some View {
+        switch s {
+        case .pending:
+            Circle().strokeBorder(Color(.track), lineWidth: 2).frame(width: 12, height: 12)
+                .background(Circle().fill(.background))
+        case .done:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.white, Color(.accent))
+                .symbolEffect(.bounce, options: .nonRepeating, value: reduceMotion ? 0 : (current ?? 0))
+        case .current:
+            Circle().fill(Color(.accent)).frame(width: 10, height: 10)
+                .overlay(Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1.5))
+        case .failed:
+            FailedNode()
+        }
+    }
+
+    @ViewBuilder private var track: some View {
         let accent = Color(.accent)
         let count = agents.count
         let working = current.map { state(agents[$0]) == .current } ?? false
@@ -710,20 +823,7 @@ struct PipelineTrack: View {
                         .frame(width: 22, height: 22)
                         .matchedGeometryEffect(id: "highlight", in: ns)
                 }
-                switch s {
-                case .pending:
-                    Circle().strokeBorder(Color(.track), lineWidth: 2).frame(width: 12, height: 12)
-                        .background(Circle().fill(.background))
-                case .done:
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.white, Color(.accent))
-                        .symbolEffect(.bounce, options: .nonRepeating, value: reduceMotion ? 0 : (current ?? 0))
-                case .current:
-                    Circle().fill(Color(.accent)).frame(width: 10, height: 10)
-                        .overlay(Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1.5))
-                case .failed:
-                    FailedNode()
-                }
+                icon(s)
             }
             .frame(width: 16, height: 16)
             Text(gate)

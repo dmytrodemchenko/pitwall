@@ -66,6 +66,18 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(PipelineTrack.agents(try XCTUnwrap(store.sessions["s2"])), []) // no track for built-ins only
     }
 
+    /// A lone gate that never ran is noise: hidden until it runs. Two or more show as a preview of the pipeline.
+    func testLoneGateShowsOnlyOnceItRan() throws {
+        store.definedAgents = { _ in ["verifier"] }
+        store.apply(event("SessionStart"))
+        XCTAssertFalse(PipelineTrack.visible(try XCTUnwrap(s1)))
+        store.apply(event("PreToolUse", tool: "Agent", agent: "verifier"))
+        XCTAssertTrue(PipelineTrack.visible(try XCTUnwrap(s1)))
+        store.definedAgents = { _ in ["planner", "verifier"] }
+        store.apply(event("SessionStart", session: "s2"))
+        XCTAssertTrue(PipelineTrack.visible(try XCTUnwrap(store.sessions["s2"])))
+    }
+
     func testVerifierFailureIsStickyUntilPass() {
         store.apply(event("SubagentStop", agent: "verifier", verdict: "fail"))
         XCTAssertEqual(s1?.status, .failed)
